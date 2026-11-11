@@ -46,3 +46,8 @@ test('adding a video that is not globally removed still works',async()=>{
  const store={raw:'{}'},app=await setup(store,feed([]));app.open('c');await app.submit();const state=JSON.parse(store.raw);
  assert.equal(state.customVideos.length,1);assert.equal(state.customVideos[0].id,id);assert.equal(state.customVideos[0].context,'c');assert.equal(app.el('video-dialog').open,false);
 });
+
+test('manual add explains an unresolved deletion instead of offering unavailable orphan action',async()=>{
+ const store={raw:JSON.stringify({hiddenVideos:[id],removedVideos:[{id,saved:true}],__yourtubePendingDeletion:{id:'a',token:'synthetic'}})},app=await setup(store,feed([])),before=store.raw;app.open('c');await app.submit();
+ assert.equal(store.raw,before);assert.match(app.el('video-error').textContent,/deletion is unresolved/i);assert.doesNotMatch(app.el('video-error').textContent,/Allow adding again/i);assert.equal(app.el('video-title').value,'My draft');
+});
