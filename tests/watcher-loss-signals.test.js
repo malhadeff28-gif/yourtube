@@ -16,16 +16,16 @@ async function fixture(t,count=0,blockCodex=false){
  const sessions=path.join(dir,'sessions');fs.mkdirSync(sessions);
  for(let i=0;i<count;i++)fs.writeFileSync(path.join(sessions,`synthetic-${i}.jsonl`),meta);
  const feed=path.join(dir,'feed.json');fs.writeFileSync(feed,JSON.stringify({contexts:[],videos:[],focusContext:''}));
- const marker=path.join(dir,'calls');
+ const marker=path.join(dir,'calls'),release=path.join(dir,'release');
  const fake=path.join(dir,'fake-codex');fs.writeFileSync(fake,`#!/usr/bin/env node
-const fs=require('node:fs');let input='';process.stdin.on('data',s=>input+=s);process.stdin.on('end',()=>{fs.appendFileSync(process.env.TEST_CALLS,JSON.stringify(input)+'\\n');if(process.env.TEST_BLOCK_CODEX==='yes'){setInterval(()=>{},1000);return}fs.writeFileSync(process.argv[process.argv.indexOf('-o')+1],JSON.stringify({relevant:false}));});`,{mode:0o755});
+const fs=require('node:fs');let input='';process.stdin.on('data',s=>input+=s);process.stdin.on('end',()=>{fs.appendFileSync(process.env.TEST_CALLS,JSON.stringify(input)+'\\n');if(process.env.TEST_BLOCK_CODEX==='yes'){const waiting=setInterval(()=>{if(fs.existsSync(process.env.TEST_RELEASE)){clearInterval(waiting);fs.writeFileSync(process.argv[process.argv.indexOf('-o')+1],JSON.stringify({relevant:false}));}},20);return}fs.writeFileSync(process.argv[process.argv.indexOf('-o')+1],JSON.stringify({relevant:false}));});`,{mode:0o755});
  const hook=path.join(dir,'watch-hook.cjs');fs.writeFileSync(hook,`
 if(process.argv[1]&&process.argv[1].endsWith('/server.js')){
  const fs=require('node:fs'),{EventEmitter}=require('node:events'),old=fs.watch;
  fs.watch=function(dir,opts,cb){if(String(dir)!==process.env.YOURTUBE_SESSIONS_DIR)return old.apply(this,arguments);const w=new EventEmitter();w.close=()=>{};process.on('message',m=>{if(m&&m.kind==='synthetic-watch'){cb('change',m.filename);process.send({ack:m.id})}});return w};
 }`);
  const socket=http.createServer();await new Promise(resolve=>socket.listen(0,'127.0.0.1',resolve));const port=socket.address().port;await new Promise(resolve=>socket.close(resolve));const base=`http://127.0.0.1:${port}`;
- const child=spawn(process.execPath,['server.js'],{cwd:root,env:{...process.env,YOURTUBE_PORT:String(port),YOURTUBE_SESSIONS_DIR:sessions,YOURTUBE_FEED:feed,YOURTUBE_CODEX:fake,YOURTUBE_DEBOUNCE_MS:'700',TEST_CALLS:marker,TEST_BLOCK_CODEX:blockCodex?'yes':'no',NODE_OPTIONS:`${process.env.NODE_OPTIONS||''} --require=${JSON.stringify(hook)}`},stdio:['ignore','ignore','ignore','ipc']});
+ const child=spawn(process.execPath,['server.js'],{cwd:root,env:{...process.env,YOURTUBE_PORT:String(port),YOURTUBE_SESSIONS_DIR:sessions,YOURTUBE_FEED:feed,YOURTUBE_CODEX:fake,YOURTUBE_DEBOUNCE_MS:'700',TEST_CALLS:marker,TEST_RELEASE:release,TEST_BLOCK_CODEX:blockCodex?'yes':'no',NODE_OPTIONS:`${process.env.NODE_OPTIONS||''} --require=${JSON.stringify(hook)}`},stdio:['ignore','ignore','ignore','ipc']});
  t.after(async()=>{if(child.exitCode===null){const done=new Promise(resolve=>child.once('exit',resolve));if(child.connected)child.disconnect();child.kill('SIGTERM');const deadline=setTimeout(()=>child.kill('SIGKILL'),3000);await done;clearTimeout(deadline)}fs.rmSync(dir,{recursive:true,force:true})});
  async function waitFor(fn){for(let i=0;i<480;i++){const result=await fn();if(result)return result;await delay(25)}throw Error('timed out')}
  await waitFor(async()=>{try{return (await fetch(`${base}/feed.json`)).ok}catch{return false}});
@@ -33,7 +33,7 @@ if(process.argv[1]&&process.argv[1].endsWith('/server.js')){
  async function notify(filename){const n=++id;await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('watch callback timed out')),2000);function onMessage(m){if(m&&m.ack===n){clearTimeout(timer);child.off('message',onMessage);resolve()}}child.on('message',onMessage);child.send({kind:'synthetic-watch',filename,id:n})})}
  const live=async enabled=>(await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify({enabled})})).json();
  const status=()=>new Promise((resolve,reject)=>{const req=http.get(`${base}/events`,res=>{let text='';res.on('data',chunk=>{text+=chunk;const match=text.match(/event: status\ndata: ([^\n]+)\n\n/);if(match){res.destroy();resolve(JSON.parse(match[1]))}});res.on('error',reject)});req.on('error',reject)});
- return {sessions,marker,notify,live,status,waitFor};
+ return {sessions,marker,release,notify,live,status,waitFor};
 }
 
 test('unknown watcher filenames surface only a coarse warning during Live', {timeout:10000},async t=>{
@@ -77,5 +77,44 @@ test('eviction while work is active warns without exposing or interrupting it', 
  await append(9,'A ninth distinct synthetic pending work item.');
  const s=await f.status();assert.equal(s.mode,'curating','the warning must not interrupt active work');assert.equal(s.activityMayBeMissed,true);
  assert.doesNotMatch(JSON.stringify(s),/synthetic-|pending work|classification/,'no chat names or message text enter status');
+ await f.live(false);assert.equal((await f.status()).activityMayBeMissed,false);
+});
+
+
+test('discarding queued work on an unapproved replacement warns without replaying it', {timeout:15000},async t=>{
+ const f=await fixture(t,2,true);await f.live(true);
+ const first=path.join(f.sessions,'synthetic-0.jsonl'),second=path.join(f.sessions,'synthetic-1.jsonl');
+ fs.appendFileSync(first,event('Synthetic active work for the blocked classifier.'));await f.notify('synthetic-0.jsonl');
+ await f.waitFor(()=>fs.existsSync(f.marker));assert.equal((await f.status()).mode,'curating');
+ fs.appendFileSync(second,event('Synthetic queued work that should be discarded.'));await f.notify('synthetic-1.jsonl');
+ assert.equal((await f.status()).activityMayBeMissed,false);
+ const replacement=path.join(f.sessions,'replacement.tmp');fs.writeFileSync(replacement,JSON.stringify({type:'session_meta',payload:{originator:'Unapproved'}})+'\n');fs.renameSync(replacement,second);await f.notify('synthetic-1.jsonl');
+ let s=await f.status();assert.equal(s.activityMayBeMissed,true,'dropping queued activity is reported');
+ assert.doesNotMatch(JSON.stringify(s),/synthetic-|queued work|replacement.tmp|yourtube-loss-warning/,'status contains no path or message');
+ fs.writeFileSync(f.release,'release');await f.waitFor(async()=> (await f.status()).mode==='listening');await delay(900);
+ const calls=fs.readFileSync(f.marker,'utf8').trim().split('\n').map(JSON.parse);assert.equal(calls.length,1,'discarded queued work is not processed or replayed');
+ assert.equal((await f.status()).activityMayBeMissed,true,'warning stays until pause');
+ await f.live(false);assert.equal((await f.status()).activityMayBeMissed,false);
+});
+
+test('an unapproved replacement without queued work does not warn, including while paused', {timeout:10000},async t=>{
+ const f=await fixture(t,2);await f.live(true);
+ async function replace(i){const target=path.join(f.sessions,`synthetic-${i}.jsonl`),temp=path.join(f.sessions,`replacement-${i}.tmp`);fs.writeFileSync(temp,JSON.stringify({type:'session_meta',payload:{originator:'Unapproved'}})+'\n');fs.renameSync(temp,target);await f.notify(`synthetic-${i}.jsonl`)}
+ await replace(0);assert.equal((await f.status()).activityMayBeMissed,false,'no queued work was lost');
+ await f.live(false);await replace(1);assert.equal((await f.status()).activityMayBeMissed,false,'paused replacements do not warn');
+});
+
+test('an unapproved same-file rewrite warns only when it clears queued work', {timeout:12000},async t=>{
+ const f=await fixture(t,2,true);await f.live(true);
+ const active=path.join(f.sessions,'synthetic-0.jsonl'),queued=path.join(f.sessions,'synthetic-1.jsonl');
+ fs.appendFileSync(active,event('Synthetic classifier work that is already active.'));await f.notify('synthetic-0.jsonl');await f.waitFor(()=>fs.existsSync(f.marker));
+ // The active entry has already left the queue; invalidating its file alone must not warn.
+ const badHeader=JSON.stringify({type:'session_meta',payload:{originator:'Unapproved'}})+'\n';
+ const activeSize=fs.statSync(active).size;fs.writeFileSync(active,badHeader+' '.repeat(activeSize+10));await f.notify('synthetic-0.jsonl');
+ assert.equal((await f.status()).activityMayBeMissed,false,'already-dequeued active work is not queue loss');
+ fs.appendFileSync(queued,event('Synthetic queued work in a changing file.'));await f.notify('synthetic-1.jsonl');
+ const queuedSize=fs.statSync(queued).size;fs.writeFileSync(queued,badHeader+' '.repeat(queuedSize+10));await f.notify('synthetic-1.jsonl');
+ const s=await f.status();assert.equal(s.activityMayBeMissed,true,'unauthorized header rewrite dropped queued work');
+ assert.doesNotMatch(JSON.stringify(s),/synthetic-|changing file|already active/);
  await f.live(false);assert.equal((await f.status()).activityMayBeMissed,false);
 });
