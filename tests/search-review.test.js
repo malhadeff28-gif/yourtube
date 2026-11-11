@@ -34,7 +34,7 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
     ...process.env, YOURTUBE_PORT: String(port), YOURTUBE_SESSIONS_DIR: sessions,
     YOURTUBE_FEED: feed, YOURTUBE_SETTINGS: path.join(dir, 'settings.json'),
     YOURTUBE_CODEX: fake, YOURTUBE_DEBOUNCE_MS: '40', TEST_MARKER: marker,
-    TEST_FEED: feed, TEST_FAIL_RENAME: failRename, NODE_OPTIONS:`${process.env.NODE_OPTIONS||''} --require=${renameHook}`,
+    TEST_FEED: feed, TEST_FAIL_RENAME: failRename, NODE_OPTIONS:`${process.env.NODE_OPTIONS||''} --require=${JSON.stringify(renameHook)}`,
   }, stdio: 'ignore' });
   t.after(async () => { if(child.exitCode===null){const done=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true}) });
   async function waitFor(fn) { for(let i=0;i<200;i++){const value=await fn();if(value)return value;await delay(25)}throw Error('timed out') }
