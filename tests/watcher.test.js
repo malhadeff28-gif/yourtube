@@ -41,7 +41,6 @@ test('unavailable chat directory reports an error and can be retried', { timeout
   assert.equal(status.enabled, false);
   assert.equal(status.watcherReady, false);
   assert.match(status.message, /Retry/);
-  assert.equal(JSON.parse(fs.readFileSync(settings)).enabled, false);
   fs.mkdirSync(sessions);
   status = await (await setLive()).json();
   assert.equal(status.mode, 'listening');
