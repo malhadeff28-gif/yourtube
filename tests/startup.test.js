@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
+const net = require('node:net');
 const { spawn } = require('node:child_process');
 const { setTimeout: delay } = require('node:timers/promises');
 
@@ -99,6 +100,19 @@ test('fresh startup, consent, pause, and restart', { timeout: 15000 }, async t =
   t.after(async () => { await stop(); fs.rmSync(temp, { recursive: true, force: true }); });
 
   await start();
+  const malformedUrlResponse = await new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port }, () => {
+      socket.write(`GET http://[ HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`);
+    });
+    let response = '';
+    socket.on('data', chunk => { response += chunk; });
+    socket.on('end', () => resolve(response));
+    socket.on('error', reject);
+    socket.setTimeout(3000, () => socket.destroy(new Error('request timed out')));
+  });
+  assert.match(malformedUrlResponse, /^HTTP\/1\.1 400\b/, 'invalid URL syntax must be rejected');
+  assert.equal((await fetch(`${url}/%ZZ`)).status, 400, 'malformed percent escapes must be rejected');
+  assert.equal((await fetch(`${url}/feed.json`)).status, 200, 'malformed requests must not terminate the server');
   const initial = await (await fetch(`${url}/feed.json`)).json();
   assert.deepEqual(initial.contexts, []);
   assert.deepEqual(initial.videos, []);
