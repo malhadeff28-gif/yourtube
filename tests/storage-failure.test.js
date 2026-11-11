@@ -8,13 +8,14 @@ const { setImmediate: tick } = require('node:timers/promises');
 
 async function setup() {
   const elements = new Map();
-  function el(id){if(!elements.has(id))elements.set(id,{id,disabled:false,value:'',textContent:'',innerHTML:'',open:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(k,f){this.listeners[k]=f},showModal(){this.open=true},close(){this.open=false},replaceChildren(){},reset(){}});return elements.get(id)}
-  let state=JSON.stringify({customVideos:[],customContexts:[],contextEdits:{},deletedContexts:[],hiddenVideos:[],saved:[]}), fail=true, deleteFail=false, refreshFail=false, initialLoaded=false;
+  function el(id){if(!elements.has(id))elements.set(id,{id,disabled:false,value:'',textContent:'',innerHTML:'',open:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(k,f){this.listeners[k]=f},showModal(){this.open=true},close(){this.open=false;this.listeners.close?.()},replaceChildren(){},reset(){}});return elements.get(id)}
+  let state=JSON.stringify({customVideos:[],customContexts:[],contextEdits:{},deletedContexts:[],hiddenVideos:[],saved:[]}), fail=true, deleteFail=false, refreshFail=false, initialLoaded=false, deletionGate=null;
   let feed={contexts:[{id:'project',name:'Project',task:'Task'}],videos:[{id:'abc123def45',context:'project',title:'Existing video',channel:'Sample',reason:'Example',source:'Fixture'}],focusContext:'project',contextSource:'Fixture'};
   class FakeEvents{constructor(){this.listeners={}}addEventListener(k,f){this.listeners[k]=f}close(){}}
-  const context={window:{},document:{getElementById:el,querySelectorAll:()=>[],createElement:()=>el('created')},localStorage:{getItem:()=>state,setItem:(_k,v)=>{if(fail)throw Error('quota exceeded');state=v}},EventSource:FakeEvents,fetch:async(url)=>{if(url==='/api/context/delete'){if(deleteFail)return {ok:false};feed={...feed,contexts:[],videos:[]};return {ok:true}}if(refreshFail&&initialLoaded)return {ok:false};initialLoaded=true;return {ok:true,json:async()=>feed}},setTimeout,clearTimeout,AbortController,URL,console,crypto:{randomUUID:()=> 'new-project'},confirm:()=>true};
+  const dialogIds=['context-dialog','video-dialog','player-dialog','info-dialog','live-consent','search-review'];
+  const context={window:{},document:{getElementById:el,querySelector:selector=>selector==='dialog[open]'?dialogIds.map(el).find(d=>d.open)||null:null,querySelectorAll:selector=>selector==='dialog'?dialogIds.map(el):[],createElement:()=>el('created')},localStorage:{getItem:()=>state,setItem:(_k,v)=>{if(fail)throw Error('quota exceeded');state=v}},EventSource:FakeEvents,fetch:async(url)=>{if(url==='/api/context/delete'){if(deletionGate)await deletionGate;if(deleteFail)return {ok:false};feed={...feed,contexts:[],videos:[]};return {ok:true}}if(refreshFail&&initialLoaded)return {ok:false};initialLoaded=true;return {ok:true,json:async()=>feed}},setTimeout,clearTimeout,AbortController,URL,console,crypto:{randomUUID:()=> 'new-project'},confirm:()=>true};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),context);await tick();
-  return {el,saved:()=>JSON.parse(state),allow:()=>{fail=false},failDelete:()=>{deleteFail=true},failRefresh:()=>{refreshFail=true}};
+  return {el,saved:()=>JSON.parse(state),allow:()=>{fail=false},failDelete:()=>{deleteFail=true},failRefresh:()=>{refreshFail=true},holdDeletion:()=>{let release;deletionGate=new Promise(resolve=>{release=resolve});return release}};
 }
 const submit={preventDefault(){}};
 const click=(selector,id)=>({target:{closest:s=>s===selector?{dataset:{[selector.slice(6,-1)]:id}}:null}});
@@ -60,4 +61,34 @@ test('server deletion plus failed local write is reported as partial success',as
   assert.match(el('toast').textContent,/browser.*(?:not|could not).*sav/i);
   assert.doesNotMatch(el('toast').textContent,/could not delete/i);
   assert.doesNotMatch(el('context-nav').innerHTML,/Project/);
+});
+
+test('a late deletion response never closes or labels a newer context draft',async()=>{
+  for(const mode of ['success','failure','partial']){
+    const app=await setup();if(mode!=='partial')app.allow();const release=app.holdDeletion();app.el('edit-context').listeners.click();
+    const pending=app.el('delete-context').listeners.click();
+    app.el('context-dialog').close();app.el('add-context').listeners.click();app.el('context-name').value='New draft';app.el('context-task').value='Still editing';
+    if(mode==='failure')app.failDelete();release();await pending;
+    assert.equal(app.el('context-dialog').open,true,'the new dialog must stay open');
+    assert.equal(app.el('context-name').value,'New draft');assert.equal(app.el('context-task').value,'Still editing');
+    assert.equal(app.el('context-error').textContent,'','old response must not label the new draft');
+    app.el('context-dialog').close();
+    if(mode==='failure')assert.match(app.el('toast').textContent,/could not confirm project deletion/i);
+    else if(mode==='partial')assert.match(app.el('toast').textContent,/browser.*could not be saved/i);
+    else assert.match(app.el('toast').textContent,/project.*deleted/i);
+  }
+});
+
+test('a late deletion result preserves a reopened project or video dialog',async()=>{
+  for(const kind of ['same-project','video']){
+    const app=await setup();app.allow();const release=app.holdDeletion();app.el('edit-context').listeners.click();
+    const pending=app.el('delete-context').listeners.click();app.el('context-dialog').close();
+    if(kind==='same-project'){app.el('edit-context').listeners.click();app.el('context-name').value='Reopened draft'}
+    else{app.el('add-video').listeners.click();app.el('video-title').value='Video draft'}
+    release();await pending;
+    const dialog=app.el(kind==='same-project'?'context-dialog':'video-dialog');
+    assert.equal(dialog.open,true,'the newer dialog must stay open');
+    assert.equal(app.el(kind==='same-project'?'context-name':'video-title').value,kind==='same-project'?'Reopened draft':'Video draft');
+    dialog.close();assert.match(app.el('toast').textContent,/project.*deleted/i);
+  }
 });
