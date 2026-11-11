@@ -1,14 +1,26 @@
 'use strict';
+let startupFailed=false, activeStartupEvents=null;
+function showStartupFailure(reloadPage=false){
+ startupFailed=true;if(activeStartupEvents){activeStartupEvents.close();activeStartupEvents=null}
+ const grid=document.getElementById('grid'),warning=document.createElement('p'),retry=document.createElement('button'),pause=document.createElement('button');
+ document.getElementById('live-toggle').disabled=true;
+ warning.setAttribute('role','alert');warning.textContent='Could not load the local feed. Live may still be on. Pause Live, retry the feed, or stop the service.';
+ retry.type='button';retry.textContent='Retry loading the feed';retry.addEventListener('click',()=>{retry.disabled=true;if(reloadPage){window.location.reload();return}grid.textContent='Retrying…';start().catch(()=>showStartupFailure(true))});
+ pause.type='button';pause.textContent='Pause Live';pause.addEventListener('click',async()=>{if(pause.disabled)return;pause.disabled=true;const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);try{const response=await fetch('/api/live',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:false}),signal:controller.signal});if(!response.ok)throw Error();const result=await response.json();if(result.enabled!==false||result.mode!=='paused')throw Error();warning.textContent='Server confirmed Live is paused. Retry loading the feed.'}catch{warning.textContent='Could not confirm Live is paused. Retry, or stop the service to pause it.'}finally{clearTimeout(timeout);pause.disabled=false}});
+ grid.replaceChildren(warning,retry,pause);
+}
+function validFeed(data){
+ const record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x), optionalText=(x,key)=>x[key]===undefined||typeof x[key]==='string';
+ return record(data)&&Array.isArray(data.contexts)&&Array.isArray(data.videos)
+  &&data.contexts.every(c=>record(c)&&typeof c.id==='string'&&typeof c.name==='string'&&typeof c.task==='string'&&optionalText(c,'note'))
+  &&data.videos.every(v=>record(v)&&typeof v.id==='string'&&typeof v.context==='string'&&['title','channel','reason','source'].every(key=>optionalText(v,key)))
+  &&['focusContext','contextSource','updatedAt'].every(key=>optionalText(data,key));
+}
 async function start(){
- const loadFeed = async signal => {const response = await fetch('feed.json', {cache:'no-store',signal}); if(!response.ok) throw new Error('Feed unavailable'); const data=await response.json();if(!Array.isArray(data.contexts)||!Array.isArray(data.videos))throw new Error('Invalid feed');return data;};
+ startupFailed=false;
+ const loadFeed = async signal => {const response = await fetch('feed.json', {cache:'no-store',signal}); if(!response.ok) throw new Error('Feed unavailable'); const data=await response.json();if(!validFeed(data))throw new Error('Invalid feed');return data;};
  const initialController=new AbortController(),initialTimeout=setTimeout(()=>initialController.abort(),10000);
- try{window.SEED=await loadFeed(initialController.signal)}catch{
-  const grid=document.getElementById('grid'),warning=document.createElement('p'),retry=document.createElement('button'),pause=document.createElement('button');
-  warning.setAttribute('role','alert');warning.textContent='Could not load the local feed. Live may still be on. Pause Live, retry the feed, or stop the service.';
-  retry.type='button';retry.textContent='Retry loading the feed';retry.addEventListener('click',()=>{retry.disabled=true;grid.textContent='Retrying…';start().catch(()=>{grid.textContent='Unable to start YourTube. Reload the page to try again.'})});
-  pause.type='button';pause.textContent='Pause Live';pause.addEventListener('click',async()=>{if(pause.disabled)return;pause.disabled=true;const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);try{const response=await fetch('/api/live',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:false}),signal:controller.signal});if(!response.ok)throw Error();const result=await response.json();if(result.enabled!==false||result.mode!=='paused')throw Error();warning.textContent='Server confirmed Live is paused. Retry loading the feed.'}catch{warning.textContent='Could not confirm Live is paused. Retry, or stop the service to pause it.'}finally{clearTimeout(timeout);pause.disabled=false}});
-  grid.replaceChildren(warning,retry,pause);return;
- }finally{clearTimeout(initialTimeout)}
+ try{window.SEED=await loadFeed(initialController.signal)}catch{showStartupFailure();return}finally{clearTimeout(initialTimeout)}
  let feedVersion=JSON.stringify(window.SEED),feedRequest=0;
 const $ = id => document.getElementById(id), KEY = 'yourtube.state.v1';
 const blank = () => ({contextEdits:{},customContexts:[],deletedContexts:[],customVideos:[],hiddenVideos:[],saved:[]});
@@ -116,12 +128,12 @@ render();
  function cancelFeedRetry(){feedSyncGeneration++;if(feedRetry!==null){clearTimeout(feedRetry);feedRetry=null}}
  function connectEvents(){
   if(events)events.close();cancelFeedRetry();feedRequest++;statusReady=false;$('live-toggle').disabled=true;
-  const current=events=new EventSource('/events');
-  current.addEventListener('status',e=>{if(events!==current)return;try{const next=JSON.parse(e.data);if(typeof next.enabled!=='boolean'||typeof next.mode!=='string')throw Error('Invalid status');liveState=next;$('watcher-warning').hidden=!liveState.enabled||liveState.activityMayBeMissed!==true;statusReady=true;$('live-toggle').disabled=liveRequestPending;if(liveState.enabled!==false&&$('live-consent').open)$('live-consent').close();$('live-label').textContent=liveState.mode==='paused'?'Paused':liveState.mode==='error'&&!liveState.watcherReady?'Retry':liveState.mode==='error'?'Live issue':liveState.mode==='awaiting-review'?'Review search':liveState.mode==='curating'||liveState.mode==='searching'||liveState.mode==='waiting'?'Updating…':'Live';$('live-toggle').title=liveState.message;$('live-toggle').classList.toggle('paused',liveState.mode==='paused'||liveState.mode==='error');if($('info-dialog').open)$('live-detail').textContent=liveState.message+(liveState.lastSearch?' Last general search: '+liveState.lastSearch:'');if(liveState.mode==='awaiting-review'&&liveState.requestId&&!$('search-review').open){$('search-review-query').value=liveState.pendingQuery||'';$('search-review-error').textContent='';$('search-review').showModal()}else if(liveState.mode!=='awaiting-review'&&$('search-review').open)$('search-review').close()}catch{statusReady=false;$('live-toggle').disabled=true}});
-  const syncFeed=()=>{if(events!==current)return;cancelFeedRetry();const generation=feedSyncGeneration;const attempt=number=>{if(events!==current||generation!==feedSyncGeneration)return;refreshFeed(true).catch(()=>{if(events!==current||generation!==feedSyncGeneration)return;if(number<3){feedRetry=setTimeout(()=>{feedRetry=null;attempt(number+1)},1000*2**number)}else toast('Could not load the updated feed. Reconnect or reload to try again.')})};attempt(0)};
+  const current=events=activeStartupEvents=new EventSource('/events');
+  current.addEventListener('status',e=>{if(startupFailed||events!==current)return;try{const next=JSON.parse(e.data);if(typeof next.enabled!=='boolean'||typeof next.mode!=='string')throw Error('Invalid status');liveState=next;$('watcher-warning').hidden=!liveState.enabled||liveState.activityMayBeMissed!==true;statusReady=true;$('live-toggle').disabled=liveRequestPending;if(liveState.enabled!==false&&$('live-consent').open)$('live-consent').close();$('live-label').textContent=liveState.mode==='paused'?'Paused':liveState.mode==='error'&&!liveState.watcherReady?'Retry':liveState.mode==='error'?'Live issue':liveState.mode==='awaiting-review'?'Review search':liveState.mode==='curating'||liveState.mode==='searching'||liveState.mode==='waiting'?'Updating…':'Live';$('live-toggle').title=liveState.message;$('live-toggle').classList.toggle('paused',liveState.mode==='paused'||liveState.mode==='error');if($('info-dialog').open)$('live-detail').textContent=liveState.message+(liveState.lastSearch?' Last general search: '+liveState.lastSearch:'');if(liveState.mode==='awaiting-review'&&liveState.requestId&&!$('search-review').open){$('search-review-query').value=liveState.pendingQuery||'';$('search-review-error').textContent='';$('search-review').showModal()}else if(liveState.mode!=='awaiting-review'&&$('search-review').open)$('search-review').close()}catch{statusReady=false;$('live-toggle').disabled=true}});
+  const syncFeed=()=>{if(startupFailed||events!==current)return;cancelFeedRetry();const generation=feedSyncGeneration;const attempt=number=>{if(events!==current||generation!==feedSyncGeneration)return;refreshFeed(true).catch(()=>{if(events!==current||generation!==feedSyncGeneration)return;if(number<3){feedRetry=setTimeout(()=>{feedRetry=null;attempt(number+1)},1000*2**number)}else toast('Could not load the updated feed. Reconnect or reload to try again.')})};attempt(0)};
   current.addEventListener('open',syncFeed);
   current.addEventListener('feed',syncFeed);
-  current.onerror=()=>{if(events!==current)return;cancelFeedRetry();feedRequest++;statusReady=false;if($('live-consent').open)$('live-consent').close();liveState={mode:'disconnected',message:'Live service disconnected. Restart YourTube.'};$('live-label').textContent='Offline';$('live-toggle').disabled=true;$('live-toggle').classList.add('paused')};
+  current.onerror=()=>{if(startupFailed||events!==current)return;cancelFeedRetry();feedRequest++;statusReady=false;if($('live-consent').open)$('live-consent').close();liveState={mode:'disconnected',message:'Live service disconnected. Restart YourTube.'};$('live-label').textContent='Offline';$('live-toggle').disabled=true;$('live-toggle').classList.add('paused')};
  }
  connectEvents();
  async function setLive(enabled){if(liveRequestPending||!statusReady||typeof liveState.enabled!=='boolean')return;const expectedEnabled=liveState.enabled;statusReady=false;liveRequestPending=true;$('live-toggle').disabled=true;const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);try{const response=await fetch('/api/live',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled,expectedEnabled}),signal:controller.signal});if(!response.ok)throw Error()}catch{toast('Could not change Live. Reconnecting to check its status.')}finally{clearTimeout(timeout);liveRequestPending=false;connectEvents()}}
@@ -133,4 +145,4 @@ render();
  $('search-review-cancel').addEventListener('click',()=>reviewSearch('cancel'));
  $('search-review').addEventListener('cancel',e=>{e.preventDefault();reviewSearch('cancel')});
 }
-start().catch(()=>{document.getElementById('grid').textContent='Unable to load the local feed. Make sure YourTube is running through its local server.'});
+start().catch(()=>showStartupFailure(true));
