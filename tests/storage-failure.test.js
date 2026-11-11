@@ -24,28 +24,34 @@ test('failed browser writes keep context and video drafts open without mutating 
   el('add-context').listeners.click();el('context-name').value='My draft';el('context-task').value='My work';
   el('context-form').listeners.submit(submit);
   assert.equal(el('context-dialog').open,true,'failed context save must retain its dialog');
-  assert.equal(el('context-name').value,'My draft');assert.match(el('toast').textContent,/could not save/i);
+  assert.equal(el('context-name').value,'My draft');assert.match(el('context-error').textContent,/could not save/i);
   assert.doesNotMatch(el('context-nav').innerHTML,/My draft/);assert.deepEqual(saved().customContexts,[]);
-  allow();el('context-form').listeners.submit(submit);assert.equal(el('context-dialog').open,false);assert.match(el('context-nav').innerHTML,/My draft/);
+  allow();el('context-form').listeners.submit(submit);assert.equal(el('context-dialog').open,false);assert.equal(el('context-error').textContent,'');assert.match(el('context-nav').innerHTML,/My draft/);
 });
 
 test('failed video and list writes do not produce success or volatile state changes',async()=>{
   const {el,saved,allow}=await setup();
   el('add-video').listeners.click();el('video-url').value='https://youtu.be/xyz123abc45';el('video-title').value='A draft video';el('video-context').value='project';
   el('video-form').listeners.submit(submit);
-  assert.equal(el('video-dialog').open,true);assert.equal(el('video-title').value,'A draft video');assert.match(el('toast').textContent,/could not save/i);assert.doesNotMatch(el('grid').innerHTML,/A draft video/);assert.deepEqual(saved().customVideos,[]);
+  assert.equal(el('video-dialog').open,true);assert.equal(el('video-title').value,'A draft video');assert.match(el('video-error').textContent,/could not save/i);assert.doesNotMatch(el('grid').innerHTML,/A draft video/);assert.deepEqual(saved().customVideos,[]);
   el('grid').listeners.click(click('[data-save]','abc123def45'));assert.match(el('toast').textContent,/could not save/i);assert.doesNotMatch(el('grid').innerHTML,/aria-pressed="true"/);assert.deepEqual(saved().saved,[]);
   el('grid').listeners.click(click('[data-hide]','abc123def45'));assert.match(el('toast').textContent,/could not save/i);assert.match(el('grid').innerHTML,/Existing video/);assert.deepEqual(saved().hiddenVideos,[]);
-  allow();el('video-form').listeners.submit(submit);assert.equal(el('video-dialog').open,false);assert.match(el('grid').innerHTML,/A draft video/);assert.equal(saved().customVideos.length,1);
+  allow();el('video-form').listeners.submit(submit);assert.equal(el('video-dialog').open,false);assert.equal(el('video-error').textContent,'');assert.match(el('grid').innerHTML,/A draft video/);assert.equal(saved().customVideos.length,1);
   el('grid').listeners.click(click('[data-save]','abc123def45'));assert.deepEqual(saved().saved,['abc123def45']);
   el('grid').listeners.click(click('[data-hide]','abc123def45'));assert.deepEqual(saved().hiddenVideos,['abc123def45']);assert.deepEqual(saved().saved,[]);
 });
 
 test('delete failure and post-deletion refresh failure are distinguished',async()=>{
   const failed=await setup();failed.failDelete();failed.el('edit-context').listeners.click();await failed.el('delete-context').listeners.click();
-  assert.match(failed.el('toast').textContent,/could not confirm project deletion/i);assert.equal(failed.el('context-dialog').open,true);assert.match(failed.el('context-nav').innerHTML,/Project/);
+  assert.match(failed.el('context-error').textContent,/could not confirm project deletion/i);assert.equal(failed.el('context-dialog').open,true);assert.match(failed.el('context-nav').innerHTML,/Project/);
   const refresh=await setup();refresh.allow();refresh.failRefresh();refresh.el('edit-context').listeners.click();await refresh.el('delete-context').listeners.click();
   assert.match(refresh.el('toast').textContent,/deleted.*could not be refreshed/i);assert.doesNotMatch(refresh.el('context-nav').innerHTML,/Project/);
+});
+
+test('modal errors use alert regions inside each form',()=>{
+  const html=fs.readFileSync(path.join(__dirname,'..','dist','index.html'),'utf8');
+  assert.match(html,/<dialog id="context-dialog">[\s\S]*?<p id="context-error" role="alert"><\/p>[\s\S]*?<\/dialog>/);
+  assert.match(html,/<dialog id="video-dialog">[\s\S]*?<p id="video-error" role="alert"><\/p>[\s\S]*?<\/dialog>/);
 });
 
 test('server deletion plus failed local write is reported as partial success',async()=>{
