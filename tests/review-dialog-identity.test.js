@@ -37,7 +37,7 @@ test('search review binds the displayed draft and responses to the request ID', 
   const context={window:{},document:{getElementById:element,querySelectorAll:()=>[],createElement:()=>element('new')},localStorage:{getItem:()=>null,setItem(){}},EventSource:FakeEvents,fetch,setTimeout:fakeSetTimeout,clearTimeout:id=>timers.delete(id),AbortController,URL,console};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),context);
   await tick();
-  const status=(id,query)=>source.status({mode:'awaiting-review',enabled:true,requestId:id,pendingQuery:query,pendingProject:{id:'p',name:'Suggested project',task:'Suggested task'},projectOptions:[{id:'p',name:'Example project'}],message:'Review'});
+  const status=(id,query)=>source.status({mode:'awaiting-review',enabled:true,requestId:id,pendingQuery:query,pendingProject:{id:'p',name:'Suggested project',task:'Suggested task'},projectOptions:[{id:'p',name:'Example project',task:'Existing task'},{id:'q',name:'Other project',task:'Other task'}],message:'Review'});
   const dialog=element('search-review'), input=element('search-review-query'), error=element('search-review-error');
   status('first','first suggested topic');
   assert.equal(dialog.open,true);
@@ -46,6 +46,7 @@ test('search review binds the displayed draft and responses to the request ID', 
   status('first','first suggested topic');
   assert.equal(input.value,'first edited topic','same request must preserve edits');
   assert.equal(element('search-review-name').value,'My reviewed project','same request must preserve project edits');
+  element('search-review-project').value='q';element('search-review-project').listeners.change();assert.equal(element('search-review-name').value,'Other project');assert.equal(element('search-review-task').value,'Other task');assert.match(element('search-review-current').textContent,/Other task/);element('search-review-project').value='p';element('search-review-project').listeners.change();assert.equal(element('search-review-name').value,'My reviewed project','switching back restores this request’s draft');
   const first=element('search-review-form').listeners.submit({preventDefault(){}});
   assert.equal(requests[0].requestId,'first');
   assert.equal(requests[0].projectId,'p');assert.equal(requests[0].projectName,'My reviewed project');assert.equal(requests[0].projectTask,'My reviewed task');

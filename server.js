@@ -84,7 +84,7 @@ function startWatch(){try{entries.clear();walk(BASE);watcher=fs.watch(BASE,{recu
 function safeQuery(x){return typeof x==='string'&&x.length>=4&&x.length<=110&&!/@|https?:|[<>\n\r]|\b(?:password|secret|token|api key)\b/i.test(x)}
 let pendingReview=null;
 function finishReview(id,approval){if(!pendingReview||pendingReview.id!==id)return false;const current=pendingReview;pendingReview=null;clearTimeout(current.timer);setState(enabled?'listening':'paused',approval?'Search approved.':'Search canceled.',{pendingQuery:null,pendingProject:null,projectOptions:null,requestId:null});current.resolve(approval);return true}
-function reviewSearch(query,proposal,contexts){return new Promise(resolve=>{const id=crypto.randomUUID(),timer=setTimeout(()=>finishReview(id,null),600000);const options=contexts.map(c=>({id:c.id,name:c.name,task:c.task}));pendingReview={id,resolve,timer,options};setState('awaiting-review','Review the proposed project and search before continuing.',{pendingQuery:query,pendingProject:proposal,projectOptions:options.map(({id,name})=>({id,name})),requestId:id})})}
+function reviewSearch(query,proposal,contexts){return new Promise(resolve=>{const id=crypto.randomUUID(),timer=setTimeout(()=>finishReview(id,null),600000);const options=contexts.map(c=>({id:c.id,name:c.name,task:c.task}));pendingReview={id,resolve,timer,options};setState('awaiting-review','Review the proposed project and search before continuing.',{pendingQuery:query,pendingProject:proposal,projectOptions:options.map(({id,name,task})=>({id,name,task})),requestId:id})})}
 // Stop the directly spawned Codex process even if it ignores a graceful stop.
 // A hard stop on server shutdown avoids leaving a timer behind after process exit.
 const stoppingChildren=new WeakMap();
