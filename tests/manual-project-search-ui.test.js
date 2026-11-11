@@ -37,3 +37,6 @@ test('start timeout and hung cancel remain uncertain and allow local dismissal a
 test('ready status reconciles a lost start response without losing results',async()=>{
  const a=await app();paused(a);open(a);const pending=submit(a);paused(a,{id,state:'ready',videos:[video]});assert.equal(a.el('manual-search-save').disabled,true,'wait until the start lock is released');a.timeout();await pending;assert.equal(a.el('manual-search-save').disabled,false);assert.match(a.el('manual-search-status').textContent,/Review the results/);await a.el('manual-search-save').listeners.click();assert.equal(JSON.parse(a.getRaw()).customVideos[0].id,'testVideo01');
 });
+test('manual search does not silently re-add a video removed from that project',async()=>{
+ const initial=JSON.stringify({projectHiddenVideos:[{id:video.id,context:'a'}]}),a=await app(initial);paused(a);open(a);const pending=submit(a);a.startResolve({ok:true});await pending;paused(a,{id,state:'ready',videos:[video]});await a.el('manual-search-save').listeners.click();const state=JSON.parse(a.getRaw());assert.deepEqual(state.projectHiddenVideos,[{id:video.id,context:'a'}]);assert.equal(state.customVideos,undefined);assert.match(a.el('manual-search-status').textContent,/removed from this project/i);
+});
