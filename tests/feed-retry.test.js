@@ -17,7 +17,7 @@ test('retries the latest failed feed refresh with bounded, cancelable backoff', 
   class FakeEvents { constructor(){source=this;this.listeners={}} addEventListener(type,fn){this.listeners[type]=fn} emit(type){if(type==='error')this.onerror?.();else this.listeners[type]?.({data:'{}'})} close(){} }
   const feed = version => ({contexts:[],videos:[],focusContext:'',contextSource:version,updatedAt:'2026-01-01T00:00:00Z'});
   const pending=[];
-  const fetch=async url=>{assert.equal(url,'feed.json');if(calls++===0)return {ok:true,json:async()=>feed('initial')};return new Promise((resolve,reject)=>pending.push({resolve:value=>resolve({ok:true,json:async()=>value}),reject}))};
+  const fetch=async (url,options)=>{assert.equal(url,'feed.json');if(calls++===0)return {ok:true,json:async()=>feed('initial')};return new Promise((resolve,reject)=>{options.signal?.addEventListener('abort',()=>reject(Error('aborted')));pending.push({resolve:value=>resolve({ok:true,json:async()=>value}),reject})})};
   const setTimer=(fn,ms)=>{const id=++nextTimer;timers.set(id,{fn,ms});return id}, clearTimer=id=>timers.delete(id);
   const context={window:{},document:{getElementById:element,querySelectorAll:()=>[],createElement:()=>element('new')},localStorage:{getItem:()=>null,setItem(){}},EventSource:FakeEvents,fetch,setTimeout:setTimer,clearTimeout:clearTimer,AbortController,URL,console};
   vm.runInNewContext(fs.readFileSync(process.env.YOURTUBE_TEST_APP || path.join(__dirname,'..','dist','app.js'),'utf8'),context);
@@ -29,6 +29,11 @@ test('retries the latest failed feed refresh with bounded, cancelable backoff', 
   runRetry(2000); pending.shift().resolve(feed('recovered')); await tick();
   assert.equal(context.window.SEED.contextSource,'recovered');
   assert.equal([...timers.values()].some(timer=>timer.ms===4000),false,'success cancels further attempts');
+
+  source.emit('feed'); pending.shift();
+  runRetry(10000); await tick();
+  runRetry(1000); pending.shift().resolve(feed('timeout recovery')); await tick();
+  assert.equal(context.window.SEED.contextSource,'timeout recovery','a hung refresh must time out and retry');
 
   source.emit('feed'); pending.shift().reject(Error('another outage')); await tick();
   assert.ok([...timers.values()].some(timer=>timer.ms===1000));
