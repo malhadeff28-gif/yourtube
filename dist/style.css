@@ -3,3 +3,5 @@
 .live-control{border:1px solid #354b37;background:#1b2c1d;color:#b9e99a;border-radius:8px;padding:10px 12px;font-size:11px;font-weight:700;white-space:nowrap}.live-control.paused{background:#28241d;border-color:#5a4c35;color:#e5c994}.top>.live-control{margin-left:auto}.top>.ghost{margin-left:0}@media(max-width:700px){.live-control{padding:10px 8px;font-size:10px}.top{gap:6px}.search-wrap{min-width:55px}.mobile-brand{font-size:0}.mobile-brand .logo{font-size:12px}}
 
 .live-control:disabled{cursor:not-allowed;opacity:.65}
+
+.feed-heading .tab-warning{margin-top:6px;color:#bed6bd}
