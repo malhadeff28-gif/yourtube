@@ -12,6 +12,9 @@ const root = path.resolve(__dirname, '..');
 const meta = JSON.stringify({type:'session_meta',payload:{originator:'Codex Desktop',source:'vscode',thread_source:'user'}})+'\n';
 const event = text => JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text}]}})+'\n';
 async function waitFor(check) { for(let i=0;i<250;i++){if(await check())return;await delay(20)}throw Error('timed out'); }
+// A newly created marker may be visible before its writer has appended bytes.
+// Wait for the specific synthetic message, not merely the file's existence.
+async function waitForMarker(file,text) { await waitFor(()=>fs.existsSync(file)&&fs.readFileSync(file,'utf8').includes(text)); }
 
 async function fixture(t) {
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'yourtube-snapshot-')),sessions=path.join(dir,'sessions');fs.mkdirSync(sessions);
@@ -38,7 +41,7 @@ test('delayed notification for a new paused session does not replay it', {timeou
  fs.writeFileSync(f.gate,'yes');await waitFor(()=>fs.existsSync(f.delivered));await delay(150);
  assert.equal(fs.existsSync(f.marker),false,'paused content must not reach Codex');
  fs.appendFileSync(file,event('A fresh synthetic message after enabling.'));
- await waitFor(()=>fs.existsSync(f.marker));
+ await waitForMarker(f.marker,'fresh synthetic message');
  const called=fs.readFileSync(f.marker,'utf8');assert.match(called,/fresh synthetic message/);assert.doesNotMatch(called,/written while paused/);
 });
 
@@ -49,7 +52,7 @@ test('a file created during the enable scan is baselined on discovery', {timeout
  await waitFor(()=>fs.existsSync(f.notice));fs.writeFileSync(f.gate,'yes');await waitFor(()=>fs.existsSync(f.delivered));await delay(150);
  assert.equal(fs.existsSync(f.marker),false,'uncertain-age content must not reach Codex');
  fs.appendFileSync(path.join(f.sessions,'during-scan.jsonl'),event('A fresh message after the scan completed.'));
- await waitFor(()=>fs.existsSync(f.marker));assert.doesNotMatch(fs.readFileSync(f.marker,'utf8'),/created during the snapshot/);
+ await waitForMarker(f.marker,'fresh message after the scan completed');assert.doesNotMatch(fs.readFileSync(f.marker,'utf8'),/created during the snapshot/);
 });
 
 test('a snapshot failure leaves Live disabled and can be retried', {timeout:10000}, async t=>{
@@ -66,14 +69,14 @@ test('a paused append after a known file is first scanned is not replayed', {tim
  fs.writeFileSync(f.gate,'yes');await waitFor(()=>fs.existsSync(f.delivered));await delay(150);
  assert.equal(fs.existsSync(f.marker),false,'append before enable must not reach Codex');
  fs.appendFileSync(file,event('A fresh message after the known-file scan.'));
- await waitFor(()=>fs.existsSync(f.marker));assert.doesNotMatch(fs.readFileSync(f.marker,'utf8'),/appended after its first stat/);
+ await waitForMarker(f.marker,'fresh message after the known-file scan');assert.doesNotMatch(fs.readFileSync(f.marker,'utf8'),/appended after its first stat/);
 });
 
 test('a session first discovered live skips existing contents but processes later appends', {timeout:10000}, async t=>{
  const f=await fixture(t);fs.writeFileSync(f.gate,'yes');assert.equal((await (await f.live(true)).json()).enabled,true);
  const file=path.join(f.sessions,'new-live.jsonl');fs.writeFileSync(file,meta+event('A first fresh message in a new session.'));
  await waitFor(()=>fs.existsSync(f.delivered));await delay(150);assert.equal(fs.existsSync(f.marker),false,'first discovery deliberately baselines content');
- fs.appendFileSync(file,event('A later fresh message in the new session.'));await waitFor(()=>fs.existsSync(f.marker));assert.match(fs.readFileSync(f.marker,'utf8'),/later fresh message/);
+ fs.appendFileSync(file,event('A later fresh message in the new session.'));await waitForMarker(f.marker,'later fresh message');assert.match(fs.readFileSync(f.marker,'utf8'),/later fresh message/);
 });
 
 test('possible missed activity is a coarse live-session warning', {timeout:10000}, async t=>{
@@ -87,7 +90,7 @@ test('possible missed activity is a coarse live-session warning', {timeout:10000
  const source=path.join(f.sessions,'new-synthetic.jsonl');fs.writeFileSync(source,meta+event('A private synthetic message written in a fresh chat.'));
  await waitFor(async()=> (await f.status()).activityMayBeMissed===true);
  const warning=await f.status();assert.equal(warning.enabled,true);assert.doesNotMatch(JSON.stringify(warning),/private synthetic message|new-synthetic\.jsonl/,'status must not expose message or file');
- fs.appendFileSync(source,event('A later synthetic message in the same chat.'));await waitFor(()=>fs.existsSync(f.marker));
+ fs.appendFileSync(source,event('A later synthetic message in the same chat.'));await waitForMarker(f.marker,'later synthetic message in the same chat');
  assert.equal((await f.status()).activityMayBeMissed,true,'later processing must not erase warning');
  await f.live(false);assert.equal((await f.status()).activityMayBeMissed,false,'pause clears the session warning');
  assert.equal((await (await f.live(true)).json()).activityMayBeMissed,false,'a new live session starts without a warning');
@@ -96,7 +99,7 @@ test('possible missed activity is a coarse live-session warning', {timeout:10000
 test('a replaced session cannot reuse cached Desktop authorization', {timeout:10000}, async t=>{
  const f=await fixture(t),file=path.join(f.sessions,'s.jsonl');fs.writeFileSync(file,meta);await waitFor(()=>fs.existsSync(f.notice));
  assert.equal((await (await f.live(true)).json()).enabled,true);fs.writeFileSync(f.gate,'yes');await waitFor(()=>fs.existsSync(f.delivered));
- fs.appendFileSync(file,event('A synthetic Desktop message establishing authorization.'));await waitFor(()=>fs.existsSync(f.marker));
+ fs.appendFileSync(file,event('A synthetic Desktop message establishing authorization.'));await waitForMarker(f.marker,'synthetic Desktop message establishing authorization');
  const oldSize=fs.statSync(file).size;fs.writeFileSync(f.marker,'');
  const nonDesktop=JSON.stringify({type:'session_meta',payload:{originator:'Other Client',source:'vscode',thread_source:'user'}})+'\n';
  const padding=oldSize-Buffer.byteLength(nonDesktop);assert.ok(padding>1);
@@ -117,7 +120,7 @@ test('a replaced session cannot reuse cached Desktop authorization', {timeout:10
 test('an in-place rewrite cannot retain Desktop authorization', {timeout:10000}, async t=>{
  const f=await fixture(t),file=path.join(f.sessions,'s.jsonl');fs.writeFileSync(file,meta);await waitFor(()=>fs.existsSync(f.notice));
  assert.equal((await (await f.live(true)).json()).enabled,true);fs.writeFileSync(f.gate,'yes');await waitFor(()=>fs.existsSync(f.delivered));
- fs.appendFileSync(file,event('A Desktop message establishing authorization for rewrite.'));await waitFor(()=>fs.existsSync(f.marker));
+ fs.appendFileSync(file,event('A Desktop message establishing authorization for rewrite.'));await waitForMarker(f.marker,'Desktop message establishing authorization for rewrite');
  const oldSize=fs.statSync(file).size;fs.writeFileSync(f.marker,'');
  const nonDesktop=JSON.stringify({type:'session_meta',payload:{originator:'Other Client',source:'vscode',thread_source:'user'}})+'\n';
  fs.writeFileSync(file,nonDesktop+' '.repeat(oldSize)+'\n'+event('A synthetic non Desktop message after rewrite.'));
