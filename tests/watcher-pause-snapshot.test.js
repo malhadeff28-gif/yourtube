@@ -12,9 +12,28 @@ const root = path.resolve(__dirname, '..');
 const meta = JSON.stringify({type:'session_meta',payload:{originator:'Codex Desktop',source:'vscode',thread_source:'user'}})+'\n';
 const event = text => JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text}]}})+'\n';
 async function waitFor(check) { for(let i=0;i<250;i++){if(await check())return;await delay(20)}throw Error('timed out'); }
-// A newly created marker may be visible before its writer has appended bytes.
-// Wait for the specific synthetic message, not merely the file's existence.
-async function waitForMarker(file,text) { await waitFor(()=>fs.existsSync(file)&&fs.readFileSync(file,'utf8').includes(text)); }
+// A newly created marker can be visible while its JSON record is still being
+// written. Only a complete, newline-terminated JSON string is evidence that
+// the fake CLI received the full synthetic prompt.
+function markerHasCompleteMessage(file,text) {
+ if(!fs.existsSync(file))return false;
+ const contents=fs.readFileSync(file,'utf8'),end=contents.lastIndexOf('\n');
+ if(end<0)return false;
+ return contents.slice(0,end).split('\n').some(line=>{try{const value=JSON.parse(line);return typeof value==='string'&&value.includes(text)}catch{return false}});
+}
+async function waitForMarker(file,text) { await waitFor(()=>markerHasCompleteMessage(file,text)); }
+
+test('marker wait requires the entire newline-terminated JSON record', {timeout:10000}, async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'yourtube-marker-test-')),file=path.join(dir,'marker');
+ t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+ const record=JSON.stringify('fresh synthetic message followed by paused sentinel')+'\n';
+ const boundary=record.indexOf(' followed');fs.writeFileSync(file,record.slice(0,boundary));
+ let complete=false;const pending=waitForMarker(file,'fresh synthetic message').then(()=>{complete=true});
+ await delay(60);assert.equal(complete,false,'partial JSON containing the expected text must not resolve');
+ fs.appendFileSync(file,record.slice(boundary,-1));await delay(60);assert.equal(complete,false,'JSON without its terminating newline must not resolve');
+ fs.appendFileSync(file,'\n');await pending;
+ assert.match(JSON.parse(fs.readFileSync(file,'utf8').trim()),/paused sentinel/,'the complete prompt remains available for privacy assertions');
+});
 
 async function fixture(t) {
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'yourtube-snapshot-')),sessions=path.join(dir,'sessions');fs.mkdirSync(sessions);
