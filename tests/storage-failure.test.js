@@ -6,17 +6,17 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { setImmediate: tick } = require('node:timers/promises');
 
-async function setup({fakeTimers=false}={}) {
+async function setup({fakeTimers=false,extraProject=false}={}) {
   const elements = new Map();
   function el(id){if(!elements.has(id))elements.set(id,{id,disabled:false,value:'',textContent:'',innerHTML:'',open:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(k,f){this.listeners[k]=f},showModal(){this.open=true},close(){this.open=false;this.listeners.close?.()},replaceChildren(){},reset(){}});return elements.get(id)}
   let state=JSON.stringify({customVideos:[],customContexts:[],contextEdits:{},deletedContexts:[],hiddenVideos:[],saved:[]}), fail=true, deleteFail=false, refreshFail=false, initialLoaded=false, deletionGate=null, deleteCount=0, timerId=0;
   const timers=new Map();
   const schedule=fakeTimers?(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id}:setTimeout;
   const unschedule=fakeTimers?id=>timers.delete(id):clearTimeout;
-  let feed={contexts:[{id:'project',name:'Project',task:'Task'}],videos:[{id:'abc123def45',context:'project',title:'Existing video',channel:'Sample',reason:'Example',source:'Fixture'}],focusContext:'project',contextSource:'Fixture'};
+  let feed={contexts:[{id:'project',name:'Project',task:'Task'},...(extraProject?[{id:'other',name:'Other',task:'Other task'}]:[])],videos:[{id:'abc123def45',context:'project',title:'Existing video',channel:'Sample',reason:'Example',source:'Fixture'}],focusContext:'project',contextSource:'Fixture'};
   class FakeEvents{constructor(){this.listeners={}}addEventListener(k,f){this.listeners[k]=f}close(){}}
   const dialogIds=['context-dialog','video-dialog','player-dialog','info-dialog','live-consent','search-review'];
-  const context={window:{},document:{getElementById:el,querySelector:selector=>selector==='dialog[open]'?dialogIds.map(el).find(d=>d.open)||null:null,querySelectorAll:selector=>selector==='dialog'?dialogIds.map(el):[],createElement:()=>el('created')},localStorage:{getItem:()=>state,setItem:(_k,v)=>{if(fail)throw Error('quota exceeded');state=v}},EventSource:FakeEvents,fetch:async(url,options={})=>{if(url==='/api/context/delete'){deleteCount++;if(deletionGate)await Promise.race([deletionGate,new Promise((_,reject)=>options.signal?.addEventListener('abort',()=>reject(Error('aborted'))))]);if(deleteFail)return {ok:false};feed={...feed,contexts:[],videos:[]};return {ok:true}}if(refreshFail&&initialLoaded)return {ok:false};initialLoaded=true;return {ok:true,json:async()=>feed}},setTimeout:schedule,clearTimeout:unschedule,AbortController,URL,console,crypto:{randomUUID:()=> 'new-project'},confirm:()=>true};
+  const context={window:{},document:{getElementById:el,querySelector:selector=>selector==='dialog[open]'?dialogIds.map(el).find(d=>d.open)||null:null,querySelectorAll:selector=>selector==='dialog'?dialogIds.map(el):[],createElement:()=>el('created')},localStorage:{getItem:()=>state,setItem:(_k,v)=>{if(fail)throw Error('quota exceeded');state=v}},EventSource:FakeEvents,fetch:async(url,options={})=>{if(url==='/api/context/delete'){deleteCount++;if(deletionGate)await Promise.race([deletionGate,new Promise((_,reject)=>options.signal?.addEventListener('abort',()=>reject(Error('aborted'))))]);if(deleteFail)return {ok:false};const id=JSON.parse(options.body).id;feed={...feed,contexts:feed.contexts.filter(c=>c.id!==id),videos:feed.videos.filter(v=>v.context!==id)};return {ok:true}}if(refreshFail&&initialLoaded)return {ok:false};initialLoaded=true;return {ok:true,json:async()=>feed}},setTimeout:schedule,clearTimeout:unschedule,AbortController,URL,console,crypto:{randomUUID:()=> 'new-project'},confirm:()=>true};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),context);await tick();
   return {el,timers,saved:()=>JSON.parse(state),deleteCalls:()=>deleteCount,allow:()=>{fail=false},failDelete:()=>{deleteFail=true},failRefresh:()=>{refreshFail=true},holdDeletion:()=>{let release;deletionGate=new Promise(resolve=>{release=resolve});return release}};
 }
@@ -127,4 +127,22 @@ test('a hung deletion times out into uncertainty without claiming it was cancele
   assert.equal(app.el('context-dialog').open,true);assert.match(app.el('context-error').textContent,/could not confirm/i);
   assert.doesNotMatch(app.el('context-error').textContent,/canceled|cancelled/i);
   assert.equal([...app.timers.values()].filter(timer=>timer.ms===10000).length,0,'request timer must be cleared');
+});
+
+test('video draft cannot be saved to a pending, deleted, uncertain or unavailable project',async()=>{
+  for(const mode of ['success','uncertain']){
+    const app=await setup({extraProject:true});app.allow();const release=app.holdDeletion();
+    app.el('edit-context').listeners.click();const pending=app.el('delete-context').listeners.click();app.el('context-dialog').close();
+    app.el('add-video').listeners.click();app.el('video-url').value='https://youtu.be/xyz123abc45';app.el('video-title').value='Preserved video draft';app.el('video-context').value='project';
+    app.el('video-form').listeners.submit(submit);
+    assert.equal(app.el('video-dialog').open,true);assert.match(app.el('video-error').textContent,/deletion.*progress/i);assert.deepEqual(app.saved().customVideos,[]);
+    if(mode==='uncertain')app.failDelete();release();await pending;
+    app.el('video-form').listeners.submit(submit);
+    assert.equal(app.el('video-dialog').open,true);assert.equal(app.el('video-title').value,'Preserved video draft');
+    assert.match(app.el('video-error').textContent,mode==='uncertain'?/could not confirm/i:/deleted|unavailable/i);assert.deepEqual(app.saved().customVideos,[]);
+    app.el('video-context').value='missing';app.el('video-form').listeners.submit(submit);
+    assert.equal(app.el('video-dialog').open,true);assert.match(app.el('video-error').textContent,/unavailable/i);assert.deepEqual(app.saved().customVideos,[]);
+    app.el('video-context').value='other';app.el('video-form').listeners.submit(submit);
+    assert.equal(app.el('video-dialog').open,false);assert.equal(app.saved().customVideos[0].context,'other');assert.equal(app.saved().customVideos[0].title,'Preserved video draft');
+  }
 });
