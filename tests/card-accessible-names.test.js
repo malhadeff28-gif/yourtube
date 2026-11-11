@@ -15,7 +15,7 @@ test('video action names identify the correct video and escape its title',async(
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),context);await tick();
  const html=element('grid').innerHTML;
  assert.match(html,/data-save="testVideo01" aria-label="Add to watch later: A &amp; &quot;quoted&quot; &lt;topic&gt;" aria-pressed="false"/);
- assert.match(html,/data-hide="testVideo01" aria-label="Remove A &amp; &quot;quoted&quot; &lt;topic&gt; from feed"/);
+ assert.match(html,/data-hide="testVideo01" aria-label="Remove from feed: A &amp; &quot;quoted&quot; &lt;topic&gt;"/);
  assert.match(html,/data-save="testVideo02" aria-label="Remove from watch later: Second video" aria-pressed="true"/);
- assert.match(html,/data-hide="testVideo02" aria-label="Remove Second video from feed"/);
+ assert.match(html,/data-hide="testVideo02" aria-label="Remove from feed: Second video"/);
 });
