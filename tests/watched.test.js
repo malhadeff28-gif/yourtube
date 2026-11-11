@@ -29,7 +29,7 @@ test('Watched is explicit, reversible, persistent and independent of Watch later
  assert.deepEqual(JSON.parse(store.raw).watched,['testVideo01']);assert.deepEqual(JSON.parse(store.raw).saved,['testVideo02']);
  assert.match(app.el('grid').innerHTML,/data-watched="testVideo01" aria-pressed="true" aria-label="Watched: One">Watched<\/button>/);
  app.project('b');assert.match(app.el('grid').innerHTML,/data-watched="testVideo01" aria-pressed="true"/,'same video is marked across projects');
- app.view('watched');assert.equal(app.el('feed-title').textContent,'Your watched videos');assert.match(app.el('grid').innerHTML,/One/);assert.doesNotMatch(app.el('grid').innerHTML,/>Two</);
+ app.view('watched');assert.equal(app.el('feed-title').textContent,'Watched · Project B');assert.match(app.el('grid').innerHTML,/One/);assert.doesNotMatch(app.el('grid').innerHTML,/>Two</);
  const reopened=await tab(store);reopened.view('watched');assert.match(reopened.el('grid').innerHTML,/One/);assert.doesNotMatch(reopened.el('grid').innerHTML,/>Two</);
  await reopened.action('watched','testVideo01');assert.deepEqual(JSON.parse(store.raw).watched,[]);assert.match(reopened.el('grid').innerHTML,/Mark videos watched/);assert.deepEqual(JSON.parse(store.raw).saved,['testVideo02']);
  reopened.view('saved');assert.match(reopened.el('grid').innerHTML,/>Two</);assert.doesNotMatch(reopened.el('grid').innerHTML,/>One</);
