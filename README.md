@@ -26,7 +26,7 @@ Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an em
 
 Use **Edit details** on a browser-added video to change its title, channel, or reason for that project. These edits stay in this browser and do not change the server’s Live feed or other project associations.
 
-Use **Add note** on any video to save a note for that video and project in this browser. Notes are excluded from project exports and are not sent to Codex; browser site data is not encrypted. Deleting a project deletes its notes in this browser.
+Use **Add note** on any video to save a note for that video and project in this browser. Notes are excluded from project exports unless you explicitly choose to include them and are not sent to Codex; browser site data is not encrypted. Deleting a project deletes its notes in this browser.
 
 Use **Copy to project** to add a video and its current details to another project in this browser. This does not change the Live feed; Watch later and Watched remain shared by video. Removed or already-associated videos are not copied.
 
@@ -36,7 +36,7 @@ Project and video status filters work together: choose a project and **Watch lat
 
 To request videos without reading chats, select **Find videos for a project** while Live is paused and enter a general public topic. Selecting **Search** sends the phrase to Codex and may send it to web search providers; YouTube receives candidate video IDs for metadata verification. This uses your Codex allowance. Search results remain in the service’s memory for up to ten minutes. Open a candidate on YouTube in a new tab to review it; doing so connects to YouTube. Choose individual results and any available project, then select **Save selected videos** to add them in this browser; the search does not change the server feed or project details used by Live. Removed or already associated videos are not re-added automatically. Manual search and Live work do not run together; cancellation may take time and local dismissal does not stop a search.
 
-To share a readable list, select **Export a project**, choose a project, review the preview, and download the local text file. The export includes the project name and all non-removed project videos, even those hidden by the current search or view filter, with their titles, channels and YouTube links; it excludes project tasks and notes. It is a snapshot from this browser tab, not a complete backup.
+To share a readable list, select **Export a project**, choose a project, review the preview, and download the local text file. The export includes the project name and all non-removed project videos, even those hidden by the current search or view filter, with their titles, channels and YouTube links; it excludes project tasks and project notes. You can opt in to include personal video notes; review the preview because the downloaded text file is unencrypted. It is a snapshot from this browser tab, not a complete backup.
 
 For a no-chat example, select **Try a sample feed** on an empty feed or visit [the sample page](http://127.0.0.1:8765/demo.html). It contains static example videos and makes no model or YouTube requests until you choose an external video link.
 
