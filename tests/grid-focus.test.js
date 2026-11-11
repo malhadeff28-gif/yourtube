@@ -39,7 +39,7 @@ test('card focus survives rerenders without stealing focus after an asynchronous
  document.activeElement=body;element('filters').listeners.click({target:{closest:selector=>selector==='[data-view]'?{dataset:{view:'saved'}}:null}});
  button('save','testVideo01').focus();await activate(document.activeElement);
  assert.equal(document.activeElement,button('save','testVideo02'),'unsaving in Watch later focuses the next saved card');
- document.activeElement=body;element('filters').listeners.click({target:{closest:selector=>selector==='[data-context]'?{dataset:{context:'all'}}:null}});
+ document.activeElement=body;element('filters').listeners.click({target:{closest:selector=>selector==='[data-view]'?{dataset:{view:'all'}}:null}});
  button('hide','testVideo01').focus();await activate(document.activeElement);
  assert.equal(document.activeElement,button('hide','testVideo02'),'removal moves focus to a surviving card');
  button('save','testVideo02').focus();let release;gate=new Promise(resolve=>{release=resolve});const pending=activate(document.activeElement);
