@@ -40,7 +40,7 @@ test('filter activation retains keyboard focus without stealing it on refresh',a
   assert.equal(element('feed-title').textContent,'For Project B');
   saved().focus();activate(document.activeElement);
   assert.equal(document.activeElement,saved(),'watch later retains focus after its button is replaced');
-  assert.equal(element('feed-title').textContent,'Your watch later list');
+  assert.equal(element('feed-title').textContent,'Watch later · Project B');
   const search=element('search');document.activeElement=search;
   activate(pick('a'));
   assert.equal(document.activeElement,search,'an unfocused activation does not steal focus');
