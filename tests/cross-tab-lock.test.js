@@ -109,8 +109,8 @@ test('a delayed context save does not close or replace a newer draft',async()=>{
 test('a delayed video save does not close or replace a newer video draft',async()=>{
  const data=shared();let release;const gate=new Promise(resolve=>{release=resolve});data.locks.request=async(_key,_opts,callback)=>{await gate;return callback({})};
  const a=await tab(data);a('add-video').listeners.click();a('video-url').value='https://youtu.be/abc123def45';a('video-title').value='First video';a('video-context').value='project';const saving=a('video-form').listeners.submit(submit);assert.equal(a('video-title').disabled,true);
- a('video-dialog').close();a('add-video').listeners.click();a('video-title').value='Second video';assert.equal(a('video-title').disabled,false);release();await saving;
- assert.equal(a('video-dialog').open,true);assert.equal(a('video-title').value,'Second video');assert.deepEqual(JSON.parse(data.raw).customVideos.map(x=>x.title),['First video']);
+ a('video-dialog').close();a('add-video').listeners.click();a('video-title').value='Second video';assert.equal(a('video-title').disabled,false);assert.equal(a('video-save').disabled,true);release();await saving;
+ assert.equal(a('video-dialog').open,true);assert.equal(a('video-title').value,'Second video');assert.equal(a('video-save').disabled,false);assert.deepEqual(JSON.parse(data.raw).customVideos.map(x=>x.title),['First video']);
 });
 
 
