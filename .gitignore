@@ -1,0 +1,5 @@
+dist/feed.json
+.live-settings.json
+node_modules/
+*.log
+__pycache__/

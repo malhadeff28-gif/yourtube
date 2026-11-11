@@ -1,0 +1,1 @@
+{"type":"object","additionalProperties":false,"properties":{"relevant":{"type":"boolean"},"context_id":{"type":"string"},"project":{"type":"string"},"task":{"type":"string"},"public_search":{"type":"string"}},"required":["relevant","context_id","project","task","public_search"]}
