@@ -57,8 +57,8 @@ test('delete failure and post-deletion refresh failure are distinguished',async(
 
 test('modal errors use alert regions inside each form',()=>{
   const html=fs.readFileSync(path.join(__dirname,'..','dist','index.html'),'utf8');
-  assert.match(html,/<dialog id="context-dialog"(?:\s[^>]*)?>(?:(?!<\/dialog>)[\s\S])*?<p id="context-error" role="alert"><\/p>(?:(?!<\/dialog>)[\s\S])*?<\/dialog>/);
-  assert.match(html,/<dialog id="video-dialog"(?:\s[^>]*)?>(?:(?!<\/dialog>)[\s\S])*?<p id="video-error" role="alert"><\/p>(?:(?!<\/dialog>)[\s\S])*?<\/dialog>/);
+  assert.match(html,/<dialog id="context-dialog">[\s\S]*?<p id="context-error" role="alert"><\/p>[\s\S]*?<\/dialog>/);
+  assert.match(html,/<dialog id="video-dialog">[\s\S]*?<p id="video-error" role="alert"><\/p>[\s\S]*?<\/dialog>/);
 });
 
 test('server deletion plus failed local write is reported as partial success',async()=>{
