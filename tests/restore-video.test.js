@@ -22,10 +22,10 @@ const hide=app=>app.el('grid').listeners.click(click('[data-hide]','hide',id));
 const restore=app=>app.el('removed-list').listeners.click(click('[data-restore-video]','restoreVideo',id));
 
 test('removed video survives reload and restores its prior Watch later status across projects',async()=>{
- const store={raw:JSON.stringify({saved:[id]})},first=await tab(store);await hide(first);
+ const store={raw:JSON.stringify({saved:[id],watched:[id]})},first=await tab(store);await hide(first);assert.deepEqual(JSON.parse(store.raw).watched,[id],'removal must preserve the watched mark');
  assert.deepEqual(JSON.parse(store.raw).saved,[]);assert.deepEqual(JSON.parse(store.raw).removedVideos,[{id,saved:true}]);
  const second=await tab(store);second.el('show-removed').listeners.click();assert.match(second.el('removed-list').innerHTML,/A shared video/);await restore(second);
- const s=JSON.parse(store.raw);assert.deepEqual(s.hiddenVideos,[]);assert.deepEqual(s.saved,[id]);assert.deepEqual(s.removedVideos,[]);
+ const s=JSON.parse(store.raw);assert.deepEqual(s.hiddenVideos,[]);assert.deepEqual(s.saved,[id]);assert.deepEqual(s.removedVideos,[]);assert.deepEqual(s.watched,[id],'restoration must preserve the watched mark');
  assert.match(second.el('grid').innerHTML,/A shared video/);
  await hide(second);second.el('show-removed').listeners.click();await restore(second);assert.deepEqual(JSON.parse(store.raw).saved,[id]);
 });
