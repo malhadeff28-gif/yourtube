@@ -24,6 +24,8 @@ node server.js
 
 Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an empty feed and live chat reading **paused**. Live always starts paused after a service restart, even if it was enabled before; after reading the privacy section, click **Live**, review the disclosure, and select **Enable Live** to enable it for the current run. Canceling the dialog leaves Live paused. Stop the server with Ctrl-C.
 
+Use **Edit details** on a browser-added video to change its title, channel, or reason for that project. These edits stay in this browser and do not change the server’s Live feed or other project associations.
+
 Use **Watched** on a video to mark or unmark it in this browser, and the **Watched** filter to see videos you marked. Marking is manual and reversible; playback does not mark videos watched. Watch Later is separate.
 
 To request videos without reading chats, select **Find videos for a project** while Live is paused and enter a general public topic. Selecting **Search** sends the phrase to Codex and may send it to web search providers; YouTube receives candidate video IDs for metadata verification. This uses your Codex allowance. Search results remain in the service’s memory for up to ten minutes. Review them, choose any available project, and select **Save results to project** to add new videos in this browser; the search does not change the server feed or project details used by Live. Removed or already associated videos are not re-added automatically. Manual search and Live work do not run together; cancellation may take time and local dismissal does not stop a search.
