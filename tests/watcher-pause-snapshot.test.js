@@ -132,7 +132,7 @@ test('a replaced session cannot reuse cached Desktop authorization', {timeout:10
  fs.writeFileSync(temporary,meta+event('A Desktop message already present in the replacement.'));fs.renameSync(temporary,file);
  await waitFor(()=>fs.readFileSync(f.delivered,'utf8').split('\n').filter(x=>x.includes('s.jsonl')).length>beforeSecond);await delay(100);
  assert.equal(fs.readFileSync(f.marker,'utf8'),'','replacement content of unknown age is baselined');
- fs.appendFileSync(file,event('A fresh Desktop message after replacement.'));await waitFor(()=>fs.readFileSync(f.marker,'utf8').includes('fresh Desktop message'));
+ fs.appendFileSync(file,event('A fresh Desktop message after replacement.'));await waitForMarker(f.marker,'fresh Desktop message');
  assert.doesNotMatch(fs.readFileSync(f.marker,'utf8'),/already present in the replacement/);
 });
 
