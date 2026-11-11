@@ -26,6 +26,8 @@ Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an em
 
 Use **Watched** on a video to mark or unmark it in this browser, and the **Watched** filter to see videos you marked. Marking is manual and reversible; playback does not mark videos watched. Watch Later is separate.
 
+To request videos without reading chats, select **Find videos for a project** while Live is paused and enter a general public topic. Selecting **Search** sends the phrase to Codex and may send it to web search providers; YouTube receives candidate video IDs for metadata verification. This uses your Codex allowance. Search results remain in the service’s memory for up to ten minutes. Review them, choose any available project, and select **Save results to project** to add new videos in this browser; the search does not change the server feed or project details used by Live. Removed or already associated videos are not re-added automatically. Manual search and Live work do not run together; cancellation may take time and local dismissal does not stop a search.
+
 For a no-chat example, select **Try a sample feed** on an empty feed or visit [the sample page](http://127.0.0.1:8765/demo.html). It contains static example videos and makes no model or YouTube requests until you choose an external video link.
 
 Run the isolated startup and privacy-control checks with `node --test tests/*.test.js`. They use a temporary synthetic session and a fake Codex executable; they do not read your chats or contact a model.
