@@ -24,6 +24,8 @@ node server.js
 
 Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an empty feed and live chat reading **paused**. After reading the privacy section, click **Live** in the app to enable it. Stop the server with Ctrl-C.
 
+Run the isolated startup and privacy-control checks with `node --test tests/*.test.js`. They use a temporary synthetic session and a fake Codex executable; they do not read your chats or contact a model.
+
 Optionally, `python3 scripts/service.py install` installs a macOS per-user LaunchAgent to run the service at login; `python3 scripts/service.py remove` removes it. Use the foreground server or LaunchAgent, not both. The installer refuses to overwrite an unrelated agent with the same label.
 
 ## Privacy and limits
