@@ -108,6 +108,7 @@ test('same-project drafts cannot be falsely saved during or after deletion',asyn
     app.el('context-form').listeners.submit(submit);
     assert.equal(app.el('context-dialog').open,true,'unsafe save must leave draft open');
     assert.match(app.el('context-error').textContent,mode==='uncertain'?/could not confirm/i:/deleted/i);
+    if(mode==='partial')assert.match(app.el('context-error').textContent,/browser changes could not be saved/i,'partial deletion warning must survive a blocked save');
     assert.doesNotMatch(app.el('toast').textContent,/context saved/i);
   }
 });
