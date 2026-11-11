@@ -52,9 +52,9 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   assert.equal(warning.mode,'awaiting-review');
   assert.equal(warning.requestId,pending.requestId);
   assert.equal(warning.pendingQuery,pending.pendingQuery);
-  // A retry after a prior successful deletion must not cancel unrelated work.
+  // A browser-only project has no server-feed ID; deleting it must not cancel unrelated work.
   const unchangedFeed = fs.readFileSync(feed, 'utf8');
-  assert.equal((await post('/api/context/delete',{id:'already-deleted'})).status,200);
+  assert.equal((await post('/api/context/delete',{id:'browser-only-project'})).status,200);
   assert.equal(fs.readFileSync(feed,'utf8'), unchangedFeed, 'a no-op delete must not rewrite the feed');
   const afterRetry = await status();
   assert.equal(afterRetry.mode,'awaiting-review');
