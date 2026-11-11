@@ -5,14 +5,14 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {setImmediate:tick}=require('node:timers/promises');
 const script=fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8');
 function shared(initial=null){
- let raw=initial,busy=false,deleteCalls=0,releaseDelete,hold=false,writeCalls=0,failAt=0;
+ let raw=initial,busy=false,deleteCalls=0,releaseDelete,hold=false,writeCalls=0,failAt=0,feedFail=false;
  return {
   get raw(){return raw},set raw(value){raw=value},get deleteCalls(){return deleteCalls},
   storage:{getItem(){return raw},setItem(_key,value){writeCalls++;if(writeCalls===failAt)throw Error('quota');raw=value}},
   locks:{async request(_key,opts,callback){assert.equal(opts.ifAvailable,true);if(busy)return callback(null);busy=true;try{return await callback({name:'yourtube.state.v1'})}finally{busy=false}}},
-  failOnSecondWrite(){failAt=writeCalls+2},
+  failOnSecondWrite(){failAt=writeCalls+2},failRefresh(){feedFail=true},
   holdDelete(){hold=true;return ()=>{hold=false;releaseDelete()}},
-  async fetch(url,options={}){if(url==='/api/context/delete'){deleteCalls++;if(hold)await new Promise(resolve=>{releaseDelete=resolve});return {ok:true}}return {ok:true,json:async()=>({contexts:[{id:'project',name:'Project',task:'Task'}],videos:[],focusContext:'project',contextSource:'Synthetic'})}}
+  async fetch(url,options={}){if(url==='/api/context/delete'){deleteCalls++;if(hold)await new Promise(resolve=>{releaseDelete=resolve});return {ok:true}}if(feedFail)return {ok:false};return {ok:true,json:async()=>({contexts:[{id:'project',name:'Project',task:'Task'}],videos:[],focusContext:'project',contextSource:'Synthetic'})}}
  };
 }
 async function tab(sharedData,{brokenRead=false,noLocks=false}={}){
@@ -111,4 +111,11 @@ test('a delayed video save does not close or replace a newer video draft',async(
  const a=await tab(data);a('add-video').listeners.click();a('video-url').value='https://youtu.be/abc123def45';a('video-title').value='First video';a('video-context').value='project';const saving=a('video-form').listeners.submit(submit);assert.equal(a('video-title').disabled,true);
  a('video-dialog').close();a('add-video').listeners.click();a('video-title').value='Second video';assert.equal(a('video-title').disabled,false);release();await saving;
  assert.equal(a('video-dialog').open,true);assert.equal(a('video-title').value,'Second video');assert.deepEqual(JSON.parse(data.raw).customVideos.map(x=>x.title),['First video']);
+});
+
+
+test('successful deletion recovery reports a failed feed refresh',async()=>{
+ const marker=JSON.stringify({__yourtubePendingDeletion:{id:'project',token:'test-token'}}),data=shared(marker);const a=await tab(data);data.failRefresh();
+ await a('storage-retry-delete').listeners.click();assert.equal(data.deleteCalls,1);assert.equal(JSON.parse(data.raw).__yourtubePendingDeletion,undefined);
+ assert.match(a('toast').textContent,/deletion resolved.*feed could not be refreshed/i);
 });

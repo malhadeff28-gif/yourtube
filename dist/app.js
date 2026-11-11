@@ -104,11 +104,11 @@ $('storage-retry-delete').addEventListener('click',async()=>{
   delete next.__yourtubePendingDeletion;
   if(!commit(next))return {error:'The server accepted deletion, but browser cleanup could not be saved. Editing remains disabled; try again.'};
   pendingRecovery=null;storageBlocked=false;uncertainDeletions.delete(marker.id);showStorageWarning('');
-  try{await refreshFeed()}catch{toast('Deletion resolved, but the feed could not be refreshed. Reload to check.')}
-  if(active===marker.id)active='all';render();return {ok:true};
+  let refreshed=true;try{await refreshFeed()}catch{refreshed=false}
+  if(active===marker.id)active='all';render();return {ok:true,refreshed};
  },true);
  $('storage-retry-delete').disabled=false;
- if(result.error)showStorageWarning(result.error);else toast('Pending project deletion resolved.');
+ if(result.error)showStorageWarning(result.error);else toast(result.refreshed?'Pending project deletion resolved.':'Deletion resolved, but the feed could not be refreshed. Reload to check.');
 });
 render();
 
