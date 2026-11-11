@@ -27,7 +27,7 @@ test('Watched is explicit, reversible, persistent and independent of Watch later
  await app.action('play','testVideo01');assert.equal(JSON.parse(store.raw).watched,undefined,'playback does not mark watched');
  app.el('player-dialog').close();await app.action('watched','testVideo01');
  assert.deepEqual(JSON.parse(store.raw).watched,['testVideo01']);assert.deepEqual(JSON.parse(store.raw).saved,['testVideo02']);
- assert.match(app.el('grid').innerHTML,/data-watched="testVideo01" aria-pressed="true"/);
+ assert.match(app.el('grid').innerHTML,/data-watched="testVideo01" aria-pressed="true" aria-label="Watched: One">Watched<\/button>/);
  app.project('b');assert.match(app.el('grid').innerHTML,/data-watched="testVideo01" aria-pressed="true"/,'same video is marked across projects');
  app.view('watched');assert.equal(app.el('feed-title').textContent,'Your watched videos');assert.match(app.el('grid').innerHTML,/One/);assert.doesNotMatch(app.el('grid').innerHTML,/>Two</);
  const reopened=await tab(store);reopened.view('watched');assert.match(reopened.el('grid').innerHTML,/One/);assert.doesNotMatch(reopened.el('grid').innerHTML,/>Two</);

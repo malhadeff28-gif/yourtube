@@ -24,7 +24,7 @@ node server.js
 
 Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an empty feed and live chat reading **paused**. Live always starts paused after a service restart, even if it was enabled before; after reading the privacy section, click **Live**, review the disclosure, and select **Enable Live** to enable it for the current run. Canceling the dialog leaves Live paused. Stop the server with Ctrl-C.
 
-Use **Mark watched** on a video to record it in this browser, and **Watched** to filter to videos you marked. Marking is manual and reversible; playback does not mark videos watched. Watch Later is separate.
+Use **Watched** on a video to mark or unmark it in this browser, and the **Watched** filter to see videos you marked. Marking is manual and reversible; playback does not mark videos watched. Watch Later is separate.
 
 For a no-chat example, select **Try a sample feed** on an empty feed or visit [the sample page](http://127.0.0.1:8765/demo.html). It contains static example videos and makes no model or YouTube requests until you choose an external video link.
 
