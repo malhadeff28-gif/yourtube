@@ -76,11 +76,11 @@ function consumeLine(file,line){
   history.push({at:now,text:redact(text)});recent.set(file,history.slice(-3));
   if(expiry.has(file))clearTimeout(expiry.get(file));
   expiry.set(file,setTimeout(()=>{recent.delete(file);expiry.delete(file)},1200000));
-  queue=queue.filter(x=>x.file!==file);queue.push({file,messages:history.slice(-3).map(x=>x.text)});queue=queue.slice(-8);
+  queue=queue.filter(x=>x.file!==file);queue.push({file,messages:history.slice(-3).map(x=>x.text)});if(queue.length>8){markActivityMayBeMissed();queue=queue.slice(-8)}
   if(timer)clearTimeout(timer);timer=setTimeout(processQueue,DEBOUNCE);
   if(!working)setState('waiting','New chat activity detected; checking your current work.');
 }
-function startWatch(){try{entries.clear();walk(BASE);watcher=fs.watch(BASE,{recursive:true},(_,filename)=>{if(!filename)return;const file=path.resolve(BASE,String(filename));if(file.startsWith(BASE+path.sep)&&file.endsWith('.jsonl'))readNew(file)});watcher.on('error',()=>{watcher.close();watcher=null;setEnabled(false);setState('error','Chat watcher stopped. Check access to local Codex chats, then select Retry.')} );setState(enabled?'listening':'paused',enabled?'Listening for new local Codex chat messages.':'Live chat reading is paused.');return true}catch{watcher=null;setEnabled(false);setState('error','Cannot access local Codex chats. Open Codex and check folder permissions, then select Retry.');return false}}
+function startWatch(){try{entries.clear();walk(BASE);watcher=fs.watch(BASE,{recursive:true},(_,filename)=>{if(!filename){markActivityMayBeMissed();return}const file=path.resolve(BASE,String(filename));if(file.startsWith(BASE+path.sep)&&file.endsWith('.jsonl'))readNew(file)});watcher.on('error',()=>{watcher.close();watcher=null;setEnabled(false);setState('error','Chat watcher stopped. Check access to local Codex chats, then select Retry.')} );setState(enabled?'listening':'paused',enabled?'Listening for new local Codex chat messages.':'Live chat reading is paused.');return true}catch{watcher=null;setEnabled(false);setState('error','Cannot access local Codex chats. Open Codex and check folder permissions, then select Retry.');return false}}
 function safeQuery(x){return typeof x==='string'&&x.length>=4&&x.length<=110&&!/@|https?:|[<>\n\r]|\b(?:password|secret|token|api key)\b/i.test(x)}
 let pendingReview=null;
 function finishReview(id,approval){if(!pendingReview||pendingReview.id!==id)return false;const current=pendingReview;pendingReview=null;clearTimeout(current.timer);setState(enabled?'listening':'paused',approval?'Search approved.':'Search canceled.',{pendingQuery:null,pendingProject:null,projectOptions:null,requestId:null});current.resolve(approval);return true}
