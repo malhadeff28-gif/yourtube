@@ -103,6 +103,9 @@ test('fresh startup, consent, pause, and restart', { timeout: 15000 }, async t =
   assert.deepEqual(initial.contexts, []);
   assert.deepEqual(initial.videos, []);
   assert.equal((await readStatus(url)).mode, 'paused');
+  const demo = await (await fetch(`${url}/demo.html`)).text();
+  assert.match(demo, /SAMPLE MODE/);
+  assert.doesNotMatch(demo, /<(?:script|img|iframe)\b/i, 'sample page must not load model or video content');
 
   const rejected = await setLive(url, true, 'https://untrusted.example');
   assert.equal(rejected.status, 403);

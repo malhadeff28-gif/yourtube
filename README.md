@@ -24,6 +24,8 @@ node server.js
 
 Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an empty feed and live chat reading **paused**. After reading the privacy section, click **Live** in the app to enable it. Stop the server with Ctrl-C.
 
+For a no-chat example, select **Try a sample feed** on an empty feed or visit [the sample page](http://127.0.0.1:8765/demo.html). It contains static example videos and makes no model or YouTube requests until you choose an external video link.
+
 Run the isolated startup and privacy-control checks with `node --test tests/*.test.js`. They use a temporary synthetic session and a fake Codex executable; they do not read your chats or contact a model.
 
 Run `node evaluation/relevance.js` to compare provider order and lexical reranking on a small, hand-labeled synthetic fixture. These examples are a reproducible smoke check, not evidence of real-world recommendation quality.
