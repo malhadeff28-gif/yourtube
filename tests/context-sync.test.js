@@ -29,19 +29,38 @@ test('copy to Live updates only an existing project and rejects stale, absent or
 
 const vm=require('node:vm');
 const {setImmediate:tick}=require('node:timers/promises');
-async function setupBrowser({lostResponse=false,browserOnly=false}={}){
+async function setupBrowser({lostResponse=false,browserOnly=false,serverConflict=false}={}){
  const elements=new Map();function el(id){if(!elements.has(id))elements.set(id,{id,disabled:false,value:'',textContent:'',innerHTML:'',open:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(k,f){this.listeners[k]=f},showModal(){this.open=true},close(){this.open=false;this.listeners.close?.()},replaceChildren(){},reset(){}});return elements.get(id)}
  let raw=JSON.stringify(browserOnly?{customContexts:[{id:'local',name:'My project',task:'My task',note:'Private note'}]}:{contextEdits:{local:{id:'local',name:'My project',task:'My task',note:'Private note'}}}),feed={contexts:browserOnly?[]:[{id:'local',name:'Stored project',task:'Stored task',note:'Server note'}],videos:[],focusContext:'local',contextSource:'Synthetic'},allowed=false,requests=[],confirmMessage='';
- class FakeEvents{constructor(){this.listeners={}}addEventListener(k,f){this.listeners[k]=f}close(){}}
- const context={window:{},document:{getElementById:el,querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>el('new')},localStorage:{getItem:()=>raw,setItem:(_k,v)=>{raw=v}},navigator:{locks:{request:async(_key,_opts,fn)=>fn({})}},EventSource:FakeEvents,fetch:async(url,options={})=>{if(url==='/api/context/sync'){const data=JSON.parse(options.body);requests.push(data);feed={...feed,contexts:[{...feed.contexts[0],id:data.id,name:data.name,task:data.task}]};if(lostResponse)throw Error('response lost');return {ok:true,status:200}}if(url==='feed.json')return {ok:true,json:async()=>feed};throw Error('Unexpected request '+url)},setTimeout,clearTimeout,AbortController,URL,console,crypto:{randomUUID:()=> 'new-id'},confirm:message=>{confirmMessage=message;return allowed}};
+ let events,lockWait=null;class FakeEvents{constructor(){this.listeners={};events=this}addEventListener(k,f){this.listeners[k]=f}close(){}}
+ const context={window:{},document:{getElementById:el,querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>el('new')},localStorage:{getItem:()=>raw,setItem:(_k,v)=>{raw=v}},navigator:{locks:{request:async(_key,_opts,fn)=>{if(lockWait)await lockWait;return fn({})}}},EventSource:FakeEvents,fetch:async(url,options={})=>{if(url==='/api/context/sync'){const data=JSON.parse(options.body);requests.push(data);if(serverConflict)return {ok:false,status:409};feed={...feed,contexts:[{...feed.contexts[0],id:data.id,name:data.name,task:data.task}]};if(lostResponse)throw Error('response lost');return {ok:true,status:200}}if(url==='feed.json')return {ok:true,json:async()=>feed};throw Error('Unexpected request '+url)},setTimeout,clearTimeout,AbortController,URL,console,crypto:{randomUUID:()=> 'new-id'},confirm:message=>{confirmMessage=message;return allowed}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),context);await tick();
- return {el,allow:()=>allowed=true,requests:()=>requests,stored:()=>raw,externalWrite:()=>{raw=JSON.stringify({customContexts:[{id:'local',name:'Elsewhere',task:'Changed'}]})},confirmMessage:()=>confirmMessage};
+ return {el,allow:()=>allowed=true,requests:()=>requests,stored:()=>raw,externalWrite:()=>{raw=JSON.stringify({customContexts:[{id:'local',name:'Elsewhere',task:'Changed'}]})},confirmMessage:()=>confirmMessage,holdLock:()=>{let release;lockWait=new Promise(resolve=>release=resolve);return ()=>{lockWait=null;release()}},refreshStored:async project=>{feed={...feed,contexts:project?[project]:[]};events.listeners.feed();await tick();await tick()}};
 }
 
 test('browser sync requires confirmation and copies only saved fields',async()=>{
  const b=await setupBrowser();b.el('edit-context').listeners.click();assert.equal(b.el('context-id').value,'local');await b.el('context-sync').listeners.click();assert.equal(b.requests().length,0);assert.match(b.confirmMessage(),/may be sent to Codex/i);assert.match(b.confirmMessage(),/does not start Live/i);
  b.allow();b.el('context-name').value='Unsaved edit';await b.el('context-sync').listeners.click();assert.match(b.el('context-error').textContent,/save.*edits/i);assert.equal(b.requests().length,0);
  b.el('context-name').value='My project';const before=b.stored();await b.el('context-sync').listeners.click();assert.deepEqual(b.requests(),[{id:'local',name:'My project',task:'My task',expected:{id:'local',name:'Stored project',task:'Stored task',note:'Server note'}}]);assert.equal(b.stored(),before,'copying must not alter local browser state');assert.equal((b.el('context-nav').innerHTML.match(/data-context="local"/g)||[]).length,1,'the stored project must render once');assert.match(b.el('context-error').textContent,/copied/i);
+});
+
+test('browser sync does not accept a refreshed Live project while waiting for the lock',async()=>{
+ for(const changed of [{id:'local',name:'Changed by Live',task:'New task',note:'New server note'},null]){
+  const b=await setupBrowser();b.allow();b.el('edit-context').listeners.click();const original=b.stored(),release=b.holdLock();const pending=b.el('context-sync').listeners.click();
+  await b.refreshStored(changed);assert.equal(b.requests().length,0);release();await pending;
+  assert.equal(b.requests().length,0,'a changed or deleted Live project must not be overwritten');assert.equal(b.stored(),original);assert.equal(b.el('context-name').value,'My project','local draft is preserved');assert.match(b.el('context-error').textContent,/(stored|browser) project.*changed|stored project.*no longer available/i);
+ }
+});
+
+test('browser sync rejects a Live project changed after the dialog opened even if the browser overlay masks it',async()=>{
+ const b=await setupBrowser();b.allow();b.el('edit-context').listeners.click();const original=b.stored();
+ await b.refreshStored({id:'local',name:'Changed by Live',task:'New task',note:'Server note'});
+ await b.el('context-sync').listeners.click();assert.equal(b.requests().length,0);assert.equal(b.stored(),original);assert.equal(b.el('context-name').value,'My project');assert.match(b.el('context-error').textContent,/stored project changed.*reopen/i);
+});
+
+test('browser sync reports a server-side stale compare-and-swap without overwriting',async()=>{
+ const b=await setupBrowser({serverConflict:true});b.allow();b.el('edit-context').listeners.click();const original=b.stored();await b.el('context-sync').listeners.click();
+ assert.equal(b.requests().length,1);assert.deepEqual(b.requests()[0].expected,{id:'local',name:'Stored project',task:'Stored task',note:'Server note'});assert.equal(b.stored(),original);assert.match(b.el('context-error').textContent,/stored project changed/i);assert.equal(b.el('context-dialog').open,true);
 });
 
 test('browser sync rejects stale browser data and reports a lost response without claiming failure',async()=>{
