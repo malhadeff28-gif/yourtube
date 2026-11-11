@@ -17,6 +17,7 @@ test('search review binds the displayed draft and responses to the request ID', 
     constructor(){source=this;this.listeners={};this.closed=false}
     addEventListener(type,fn){this.listeners[type]=fn}
     status(value){this.listeners.status({data:JSON.stringify(value)})}
+    disconnect(){this.onerror()}
     close(){this.closed=true}
   }
   const requests=[];
@@ -57,16 +58,43 @@ test('search review binds the displayed draft and responses to the request ID', 
   await tick();
   assert.equal(requests[1].requestId,'second');
   assert.equal(requests[1].query,'second suggested topic');
+  assert.equal(input.disabled,true,'the submitted phrase must not be editable while in flight');
+  assert.equal(element('search-review-approve').disabled,true);
+  assert.equal(element('search-review-cancel').textContent,'Dismiss locally');
+  let prevented=false;
+  dialog.listeners.cancel({preventDefault(){prevented=true}});
+  assert.equal(prevented,true);
+  assert.equal(dialog.open,false,'Escape must dismiss locally while a request is pending');
+  assert.equal(requests.length,2,'local dismissal must not send a cancel request');
+  assert.match(element('toast').textContent,/pending|processed/);
+  status('second','second suggested topic');
+  assert.equal(dialog.open,true,'a fresh status can reopen the pending review');
+  assert.equal(input.disabled,true);
   const beforeReconnect=source;
   const deadline=[...timers.values()].find(timer=>timer.ms===10000);
   assert.ok(deadline,'a pending review request must have a bounded timeout');
   deadline.fn();await tick();
   assert.equal(beforeReconnect.closed,true,'a failed request must refresh status');
   assert.match(error.textContent,/may have been processed/);
+  assert.equal(element('search-review-cancel').textContent,'Dismiss locally');
   element('search-review-cancel').listeners.click();
   assert.equal(requests.length,2,'do not retry before an authoritative status');
+  assert.equal(dialog.open,false);
   status('second','second suggested topic');
+  assert.equal(dialog.open,true);
+  assert.equal(input.disabled,false);
   element('search-review-cancel').listeners.click();await tick();
   assert.equal(requests[2].requestId,'second');
   assert.equal(requests[2].action,'cancel');
+  status('third','third suggested topic');
+  source.disconnect();
+  assert.equal(input.disabled,true);
+  assert.equal(element('search-review-cancel').textContent,'Dismiss locally');
+  assert.match(error.textContent,/pending|processed/);
+  dialog.listeners.cancel({preventDefault(){}});
+  assert.equal(dialog.open,false,'Escape must dismiss locally while offline');
+  assert.equal(requests.length,3,'offline dismissal must not send a cancel request');
+  status('third','third suggested topic');
+  assert.equal(dialog.open,true,'pending review must reopen after reconnect');
+  assert.equal(input.value,'third suggested topic');
 });
