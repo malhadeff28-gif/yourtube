@@ -8,7 +8,7 @@ The idea: turn the context in an ongoing work session into a useful starting poi
 
 1. When **Live** is enabled, the local service watches for new user messages in Codex Desktop session files on this computer. It normally starts at the end of existing files, but an in-place rewrite can cause older or paused text to be read later.
 2. A Codex invocation reads a short chat excerpt and the local feed’s stored project IDs, names, and tasks to identify a general work or study topic. The excerpt, names, and tasks receive best-effort redaction; IDs do not. Review, edit, or cancel its proposed search phrase before a separate search-enabled Codex invocation receives it. That invocation may send the phrase or queries derived from it to search providers.
-3. The service checks video IDs against YouTube's public oEmbed endpoint, then updates a local feed. You can edit project context, add videos, save videos for later, and pause live reading.
+3. The service checks video IDs against YouTube's public oEmbed endpoint, then updates a local feed. You can edit project context, add videos, save videos for later, mark videos watched, and pause live reading.
 
 This prototype is local software, not a hosted product or a YouTube integration. It depends on an installed, signed-in Codex CLI, web search, YouTube, and the current local Codex Desktop chat format. Those integrations may change. Video metadata verification does not verify the content or its relevance.
 
@@ -23,6 +23,8 @@ node server.js
 ```
 
 Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an empty feed and live chat reading **paused**. Live always starts paused after a service restart, even if it was enabled before; after reading the privacy section, click **Live**, review the disclosure, and select **Enable Live** to enable it for the current run. Canceling the dialog leaves Live paused. Stop the server with Ctrl-C.
+
+Use **Watched** on a video to mark or unmark it in this browser, and the **Watched** filter to see videos you marked. Marking is manual and reversible; playback does not mark videos watched. Watch Later is separate.
 
 For a no-chat example, select **Try a sample feed** on an empty feed or visit [the sample page](http://127.0.0.1:8765/demo.html). It contains static example videos and makes no model or YouTube requests until you choose an external video link.
 

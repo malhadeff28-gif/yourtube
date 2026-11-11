@@ -74,7 +74,7 @@ test('two Live associations retain project-specific reasons and one overall card
   const choose=id=>element('context-nav').listeners.click({target:{closest:()=>({dataset:{context:id}})}});
   choose('a');assert.equal(cardCount(),1);assert.match(grid(),/Reason for A/);assert.doesNotMatch(grid(),/Reason for B/);
   choose('b');assert.equal(cardCount(),1);assert.match(grid(),/Reason for B/);assert.doesNotMatch(grid(),/Reason for A/);
-  element('filters').listeners.click({target:{closest:selector=>selector==='[data-view]'?{}:null}});
+  element('filters').listeners.click({target:{closest:selector=>selector==='[data-view]'?{dataset:{view:'saved'}}:null}});
   assert.equal(element('feed-title').textContent,'Your watch later list');
   assert.equal(cardCount(),1,'watch later must show one card for the shared ID');
 });
