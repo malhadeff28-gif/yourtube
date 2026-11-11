@@ -169,13 +169,13 @@ $('removed-project-list').addEventListener('click',async e=>{const button=e.targ
 document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('close',()=>{if(!document.querySelector('dialog[open]')&&deferredDeletionNotices.length)toast(deferredDeletionNotices.splice(0).join(' '))}));
 function contextFormBusy(value){for(const id of ['context-name','context-task','context-note','context-save','context-sync','delete-context'])$(id).disabled=value}
 function videoFormBusy(value){for(const id of ['video-url','video-title','video-channel','video-context','video-reason','video-save'])$(id).disabled=value}
-let contextDialogMode='create',contextDialogSnapshot=null;
+let contextDialogMode='create',contextDialogSnapshot=null,contextDialogLiveSnapshot=null;
 function openContext(isNew=false,selectedId=null){
  const cs=contexts();
  if(!isNew&&!selectedId&&active==='all'&&cs.length){contextDialogGeneration++;contextDialogMode='choose';$('context-id').value='';$('context-choose-select').innerHTML='<option value="">Choose a project</option>'+cs.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');$('context-choose-select').value='';$('context-choose-error').textContent='';$('context-choose-dialog').showModal();return}
  const id=selectedId||active,context=!isNew?cs.find(c=>c.id===id):null;
  if(!isNew&&!context&&cs.length){toast('This project is no longer available. Choose a project to edit.');return}
- contextDialogGeneration++;contextFormBusy(false);contextDialogMode=context?'edit':'create';contextDialogSnapshot=context?JSON.stringify(context):null;$('context-error').textContent='';$('context-dialog-title').textContent=context?'Edit your context':'Add a project';$('context-id').value=context?.id||'';$('context-name').value=context?.name||'';$('context-task').value=context?.task||'';$('context-note').value=context?.note||'';$('delete-context').hidden=!context;$('context-error').textContent=context?contextSaveBlock(context.id):'';$('context-dialog').showModal()
+ contextDialogGeneration++;contextFormBusy(false);contextDialogMode=context?'edit':'create';contextDialogSnapshot=context?JSON.stringify(context):null;const liveProject=context&&window.SEED.contexts.find(c=>c.id===context.id);contextDialogLiveSnapshot=liveProject?JSON.stringify(liveProject):null;$('context-error').textContent='';$('context-dialog-title').textContent=context?'Edit your context':'Add a project';$('context-id').value=context?.id||'';$('context-name').value=context?.name||'';$('context-task').value=context?.task||'';$('context-note').value=context?.note||'';$('delete-context').hidden=!context;$('context-error').textContent=context?contextSaveBlock(context.id):'';$('context-dialog').showModal()
 }
 $('context-choose-form').addEventListener('submit',e=>{e.preventDefault();const id=$('context-choose-select').value,project=contexts().find(c=>c.id===id);if(!id||!project){$('context-choose-error').textContent='Choose an available project.';return}const blocked=contextSaveBlock(id);if(blocked){$('context-choose-error').textContent=blocked;return}$('context-choose-dialog').close();openContext(false,id)});
 // Export exactly the visible preview on explicit request. This is not a backup.
@@ -190,14 +190,14 @@ $('context-sync').addEventListener('click',async()=>{
  const id=$('context-id').value,generation=contextDialogGeneration,sameDialog=()=>$('context-dialog').open&&generation===contextDialogGeneration&&$('context-id').value===id;
  $('context-error').textContent='';const saved=contexts().find(c=>c.id===id),blocked=contextSaveBlock(id);
  if(!id||!saved){$('context-error').textContent='Save this project in this browser before copying it to Live.';return}
- if(!window.SEED.contexts.some(c=>c.id===id)){$('context-error').textContent='Browser-only projects cannot yet be copied to Live. No stored project was changed.';return}
+ const storedProject=window.SEED.contexts.find(c=>c.id===id);if(!storedProject&&!contextDialogLiveSnapshot){$('context-error').textContent='Browser-only projects cannot yet be copied to Live. No stored project was changed.';return}const expectedSnapshot=contextDialogLiveSnapshot;if(!storedProject||!expectedSnapshot||JSON.stringify(storedProject)!==expectedSnapshot){$('context-error').textContent='The stored project changed or is no longer available. Refresh and reopen this project before copying.';return}
  if(blocked){$('context-error').textContent=blocked;return}
  if($('context-name').value.trim()!==saved.name||$('context-task').value.trim()!==saved.task){$('context-error').textContent='Save your name and task edits in this browser first, then reopen this project.';return}
  if(!confirm('Copy this saved project name and task to the local Live feed? When Live is enabled or resumed, these stored details may be sent to Codex after best-effort redaction, including immediately if Live is already enabled. Notes stay in this browser. This does not start Live.'))return;
  contextFormBusy(true);
  const outcome=await withStorageLock(async()=>{
   const current=contexts().find(c=>c.id===id);if(!current||contextSaveBlock(id)||current.name!==saved.name||current.task!==saved.task)return {error:'The browser project changed. Reload and review before copying.'};
-  const expected=window.SEED.contexts.find(c=>c.id===id);if(!expected)return {error:'The stored project is no longer available. Refresh and review before retrying.'};const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);let response;
+  const storedNow=window.SEED.contexts.find(c=>c.id===id);if(!storedNow||JSON.stringify(storedNow)!==expectedSnapshot)return {error:'The stored project changed or is no longer available. Refresh and review before retrying.'};const expected=JSON.parse(expectedSnapshot),controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);let response;
   try{response=await fetch('/api/context/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name:saved.name,task:saved.task,expected}),signal:controller.signal})}catch{return {error:'Could not confirm whether the project was copied. Refresh and check the stored project before retrying.'}}finally{clearTimeout(timeout)}
   if(response.status===409)return {error:'Live is updating or the stored project changed. Refresh and review it before retrying.'};
   if(!response.ok)return {error:'Could not confirm whether the project was copied. Refresh and check the stored project before retrying.'};
