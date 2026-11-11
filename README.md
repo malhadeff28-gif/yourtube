@@ -28,6 +28,8 @@ Use **Edit details** on a browser-added video to change its title, channel, or r
 
 Use **Add note** on any video to save a note for that video and project in this browser. Notes are excluded from project exports and are not sent to Codex; browser site data is not encrypted. Deleting a project deletes its notes in this browser.
 
+Use **Copy to project** to add a video and its current details to another project in this browser. This does not change the Live feed; Watch later and Watched remain shared by video. Removed or already-associated videos are not copied.
+
 Use **Watched** on a video to mark or unmark it in this browser, and the **Watched** filter to see videos you marked. Marking is manual and reversible; playback does not mark videos watched. Watch Later is separate.
 
 To request videos without reading chats, select **Find videos for a project** while Live is paused and enter a general public topic. Selecting **Search** sends the phrase to Codex and may send it to web search providers; YouTube receives candidate video IDs for metadata verification. This uses your Codex allowance. Search results remain in the service’s memory for up to ten minutes. Choose individual results and any available project, then select **Save selected videos** to add them in this browser; the search does not change the server feed or project details used by Live. Removed or already associated videos are not re-added automatically. Manual search and Live work do not run together; cancellation may take time and local dismissal does not stop a search.
