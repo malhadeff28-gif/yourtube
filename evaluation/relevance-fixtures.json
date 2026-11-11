@@ -1,0 +1,6 @@
+[
+  {"query":"Spanish possessive adjectives", "candidates":[{"id":"1a","title":"Learn Spanish numbers","channel":"Language school"},{"id":"1b","title":"Spanish possessive adjectives explained","channel":"Language school"},{"id":"1c","title":"Introduction to grammar","channel":"Language school"}], "relevant":["1b"]},
+  {"query":"building a chrome extension", "candidates":[{"id":"2a","title":"Building a website","channel":"Web tutorials"},{"id":"2b","title":"Chrome extension beginner tutorial","channel":"Web tutorials"}], "relevant":["2b"]},
+  {"query":"football statistics", "candidates":[{"id":"3a","title":"Football statistics fundamentals","channel":"Sports analytics"},{"id":"3b","title":"Football history","channel":"Sports analytics"}], "relevant":["3a"]},
+  {"query":"photography lighting", "candidates":[{"id":"4a","title":"Landscape photography lighting basics","channel":"Photo lab"},{"id":"4b","title":"Lighting for landscape photography","channel":"Photo lab"}], "relevant":["4a","4b"]}
+]

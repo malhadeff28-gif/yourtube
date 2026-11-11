@@ -2,7 +2,7 @@
 
 YourTube is an early local prototype for finding YouTube videos related to what you're working on. It watches new user messages in local Codex Desktop chats (when you opt in), infers a general topic, searches for videos, and displays a feed organized by project.
 
-The idea: turn the context in an ongoing work session into a useful starting point for learning, without requiring a separate search every time the work changes. Recommendations are experimental and their quality has not been established.
+The idea: turn the context in an ongoing work session into a useful starting point for learning, without requiring a separate search every time the work changes. A simple title/channel keyword signal reranks verified candidates; ties retain provider order. It does not judge video quality or meaning. Recommendations are experimental and their quality has not been established.
 
 ## How it works
 
@@ -25,6 +25,8 @@ node server.js
 Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an empty feed and live chat reading **paused**. After reading the privacy section, click **Live** in the app to enable it. Stop the server with Ctrl-C.
 
 Run the isolated startup and privacy-control checks with `node --test tests/*.test.js`. They use a temporary synthetic session and a fake Codex executable; they do not read your chats or contact a model.
+
+Run `node evaluation/relevance.js` to compare provider order and lexical reranking on a small, hand-labeled synthetic fixture. These examples are a reproducible smoke check, not evidence of real-world recommendation quality.
 
 Optionally, `python3 scripts/service.py install` installs a macOS per-user LaunchAgent to run the service at login; `python3 scripts/service.py remove` removes it. Use the foreground server or LaunchAgent, not both. The installer refuses to overwrite an unrelated agent with the same label.
 
