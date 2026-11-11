@@ -68,8 +68,9 @@ function readNew(file){try{
 }catch(err){if(err.code!=='ENOENT')setState('error','Could not read a local chat event.')}}
 function consumeLine(file,line){
   let record;try{record=JSON.parse(line)}catch{return}
-  const p=record.payload||{};if(record.type!=='response_item'||p.type!=='message'||p.role!=='user')return;
-  const text=(p.content||[]).filter(x=>x.type==='input_text').map(x=>x.text||'').join('\n').trim();
+  if(!record||typeof record!=='object'||Array.isArray(record))return;
+  const p=record.payload;if(!p||typeof p!=='object'||Array.isArray(p)||record.type!=='response_item'||p.type!=='message'||p.role!=='user'||!Array.isArray(p.content))return;
+  const text=p.content.filter(x=>x&&typeof x==='object'&&x.type==='input_text'&&typeof x.text==='string').map(x=>x.text).join('\n').trim();
   if(text.length<14||/^\s*<(?:external_|environment_context|send_user_message)/i.test(text)||/^\s*\/(?:goal|review)\b/i.test(text))return;
   const now=Date.now(),history=(recent.get(file)||[]).filter(x=>now-x.at<1200000);
   history.push({at:now,text:redact(text)});recent.set(file,history.slice(-3));
