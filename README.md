@@ -30,6 +30,8 @@ Run the isolated startup and privacy-control checks with `node --test tests/*.te
 
 Run `node evaluation/relevance.js` to compare provider order and lexical reranking on a small, hand-labeled synthetic fixture. These examples are a reproducible smoke check, not evidence of real-world recommendation quality.
 
+An isolated acceptance harness can exercise the complete flow with fake services or, explicitly, a real Codex search for a synthetic topic. See [live acceptance](docs/live-acceptance.md) for the commands, usage implications, and the separate manual real-chat check.
+
 Optionally, `python3 scripts/service.py install` installs a macOS per-user LaunchAgent to run the service at login; `python3 scripts/service.py remove` removes it. Use the foreground server or LaunchAgent, not both. The installer refuses to overwrite an unrelated agent with the same label.
 
 ## Privacy and limits
