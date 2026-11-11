@@ -39,10 +39,10 @@ test('failed and stale writes retain the draft',async()=>{
  for(const mode of ['failure','stale']){const a=await setup();await a.edit();a.el('video-note-text').value='unsaved';if(mode==='failure')a.fail(true);else a.stale();const before=a.state();await a.submit();assert.equal(a.el('video-note-dialog').open,true);assert.equal(a.el('video-note-text').value,'unsaved');assert.match(a.el('video-note-error').textContent,/could not save|changed|cannot be safely accessed/i);assert.deepEqual(a.state(),before)}
 });
 
-test('project-hidden association cannot be saved and deletion removes project notes only',async()=>{
+test('project-hidden association cannot be saved and disabled deletion preserves notes',async()=>{
  const a=await setup();await a.edit(same,'a');a.el('video-note-text').value='note A';await a.submit();await a.edit(same,'b');a.el('video-note-text').value='note B';await a.submit();
  await a.edit(same,'a');a.el('video-note-text').value='draft';a.el('context-nav').listeners.click({target:{closest:()=>({dataset:{context:'a'}})}});await a.hide();await a.submit();assert.equal(a.el('video-note-text').value,'draft');assert.match(a.el('video-note-error').textContent,/no longer available/i);a.el('video-note-dialog').close();
- a.el('context-id').value='a';await a.el('delete-context').listeners.click();assert.deepEqual(a.state().videoNotes,[{id:same,context:'b',text:'note B'}]);assert.ok(a.requests.every(r=>!String(r.body).includes('note A')&&!String(r.body).includes('note B')));
+ a.el('context-id').value='a';await a.el('delete-context').listeners.click();assert.deepEqual(a.state().videoNotes,[{id:same,context:'a',text:'note A'},{id:same,context:'b',text:'note B'}]);assert.ok(a.requests.every(r=>!String(r.body).includes('note A')&&!String(r.body).includes('note B')));
 });
 
 test('a delayed save cannot replace a newer note draft',async()=>{
@@ -54,6 +54,6 @@ test('Live feed refresh keeps notes bound to stable associations',async()=>{
  const a=await setup();await a.edit();a.el('video-note-text').value='Keep across refresh';await a.submit();a.feed.videos.find(v=>v.id===other&&v.context==='a').title='Updated by Live';a.refresh();await tick();await a.edit();assert.equal(a.el('video-note-text').value,'Keep across refresh');assert.equal(a.el('video-note-project').textContent,'Alpha — Updated by Live');
 });
 
-test('resolving a pending project deletion removes only that project’s notes',async()=>{
- const a=await setup(true);assert.equal(a.el('storage-retry-delete').hidden,false);await a.el('storage-retry-delete').listeners.click();assert.deepEqual(a.state().videoNotes,[{id:other,context:'b',text:'keep me'}]);assert.ok(a.requests.every(r=>!String(r.body).includes('delete me')&&!String(r.body).includes('keep me')));
+test('pending project deletion preserves all notes and is never retried',async()=>{
+ const a=await setup(true),before=a.state().videoNotes;assert.equal(a.el('storage-retry-delete').hidden,true);await a.el('storage-retry-delete').listeners.click();assert.deepEqual(a.state().videoNotes,before);assert.ok(a.requests.every(r=>!String(r.body).includes('delete me')&&!String(r.body).includes('keep me')));
 });

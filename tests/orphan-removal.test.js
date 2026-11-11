@@ -42,5 +42,5 @@ test('a newly available association while acquiring the lock prevents clearing',
 });
 
 test('a pending deletion is never classified as an orphan',async()=>{
- const app=await setup({...state(true),__yourtubePendingDeletion:{id:'a',token:'test'}});app.open();assert.match(app.el('removed-list').innerHTML,/Resolve the pending project deletion/i);assert.match(app.el('removed-list').innerHTML,/data-allow-video[^>]*disabled/);const before=app.store.raw;await app.click();assert.equal(app.store.raw,before);assert.match(app.el('removed-error').textContent,/unresolved/i);
+ const app=await setup({...state(true),__yourtubePendingDeletion:{id:'a',token:'test'}});app.open();assert.match(app.el('removed-list').innerHTML,/project deletion is unresolved.*retry.*temporarily unavailable/i);assert.match(app.el('removed-list').innerHTML,/data-allow-video[^>]*disabled/);const before=app.store.raw;await app.click();assert.equal(app.store.raw,before);assert.match(app.el('removed-error').textContent,/unresolved/i);
 });

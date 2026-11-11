@@ -37,10 +37,10 @@ test('failed and stale writes keep the edit draft open without modifying saved d
  for(const mode of ['failure','stale']){const a=await setup();await a.edit();a.el('edit-video-name').value='Unsaved draft';if(mode==='failure')a.fail(true);else a.stale();const before=a.state();await a.submit();assert.equal(a.el('edit-video-dialog').open,true);assert.equal(a.el('edit-video-name').value,'Unsaved draft');assert.match(a.el('edit-video-error').textContent,/could not save|changed|cannot be safely accessed/i);assert.deepEqual(a.state(),before)}
 });
 
-test('editing unavailable, hidden or deleting projects cannot create or resurrect a video',async()=>{
+test('unavailable video edits are rejected and disabled deletion preserves editing',async()=>{
  const a=await setup();await a.edit(other,'a');assert.equal(a.el('edit-video-dialog').open,false,'Live-only metadata cannot be edited');
  await a.edit(same,'missing');assert.equal(a.el('edit-video-dialog').open,false);
- await a.edit();a.el('edit-video-name').value='Draft';a.el('context-id').value='a';const release=a.hold();const pending=a.el('delete-context').listeners.click();await tick();await a.submit();assert.equal(a.el('edit-video-dialog').open,true);assert.equal(a.el('edit-video-name').value,'Draft');assert.match(a.el('edit-video-error').textContent,/another.*saving|deletion/i);release();await pending;
+ await a.edit();a.el('edit-video-name').value='Draft';a.el('context-id').value='a';await a.el('delete-context').listeners.click();assert.match(a.el('context-error').textContent,/temporarily unavailable/i);await a.submit();assert.equal(a.state().customVideos[0].title,'Draft');
 });
 
 test('an old edit response does not close or replace a newer dialog draft',async()=>{
