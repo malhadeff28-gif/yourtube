@@ -48,12 +48,7 @@ test('failed video and list writes do not produce success or volatile state chan
   await el('grid').listeners.click(click('[data-hide]','abc123def45'));assert.deepEqual(saved().hiddenVideos,['abc123def45']);assert.deepEqual(saved().saved,[]);
 });
 
-test('delete failure and post-deletion refresh failure are distinguished',async()=>{
-  const failed=await setup();failed.allow();failed.failDelete();failed.el('edit-context').listeners.click();await failed.el('delete-context').listeners.click();
-  assert.match(failed.el('context-error').textContent,/could not confirm project deletion/i);assert.equal(failed.el('context-dialog').open,true);assert.match(failed.el('context-nav').innerHTML,/Project/);
-  const refresh=await setup();refresh.allow();refresh.failRefresh();refresh.el('edit-context').listeners.click();await refresh.el('delete-context').listeners.click();
-  assert.match(refresh.el('toast').textContent,/deleted.*could not be refreshed/i);assert.doesNotMatch(refresh.el('context-nav').innerHTML,/Project/);
-});
+
 
 test('modal errors use alert regions inside each form',()=>{
   const html=fs.readFileSync(path.join(__dirname,'..','dist','index.html'),'utf8');
@@ -61,95 +56,17 @@ test('modal errors use alert regions inside each form',()=>{
   assert.match(html,/<dialog id="video-dialog"(?:\s[^>]*)?>(?:(?!<\/dialog>)[\s\S])*?<p id="video-error" role="alert"><\/p>(?:(?!<\/dialog>)[\s\S])*?<\/dialog>/);
 });
 
-test('server deletion plus failed local write is reported as partial success',async()=>{
-  const app=await setup();app.failAfterIntent();const {el}=app;el('edit-context').listeners.click();
-  await el('delete-context').listeners.click();
-  assert.match(el('toast').textContent,/browser.*(?:not|could not).*sav/i);
-  assert.doesNotMatch(el('toast').textContent,/could not delete/i);
-  assert.doesNotMatch(el('context-nav').innerHTML,/Project/);
-});
 
-test('a late deletion response never closes or labels a newer context draft',async()=>{
-  for(const mode of ['success','failure','partial']){
-    const app=await setup();if(mode==='partial')app.failAfterIntent();else app.allow();const release=app.holdDeletion();app.el('edit-context').listeners.click();
-    const pending=app.el('delete-context').listeners.click();
-    app.el('context-dialog').close();app.el('add-context').listeners.click();app.el('context-name').value='New draft';app.el('context-task').value='Still editing';
-    if(mode==='failure')app.failDelete();release();await pending;
-    assert.equal(app.el('context-dialog').open,true,'the new dialog must stay open');
-    assert.equal(app.el('context-name').value,'New draft');assert.equal(app.el('context-task').value,'Still editing');
-    assert.equal(app.el('context-error').textContent,'','old response must not label the new draft');
-    app.el('context-dialog').close();
-    if(mode==='failure')assert.match(app.el('toast').textContent,/could not confirm project deletion/i);
-    else if(mode==='partial')assert.match(app.el('toast').textContent,/browser.*could not be saved/i);
-    else assert.match(app.el('toast').textContent,/project.*deleted/i);
-  }
-});
 
-test('a late deletion result preserves a reopened project or video dialog',async()=>{
-  for(const kind of ['same-project','video']){
-    const app=await setup();app.allow();const release=app.holdDeletion();app.el('edit-context').listeners.click();
-    const pending=app.el('delete-context').listeners.click();app.el('context-dialog').close();
-    if(kind==='same-project'){app.el('edit-context').listeners.click();app.el('context-name').value='Reopened draft'}
-    else{app.el('add-video').listeners.click();app.el('video-title').value='Video draft'}
-    release();await pending;
-    const dialog=app.el(kind==='same-project'?'context-dialog':'video-dialog');
-    assert.equal(dialog.open,true,'the newer dialog must stay open');
-    assert.equal(app.el(kind==='same-project'?'context-name':'video-title').value,kind==='same-project'?'Reopened draft':'Video draft');
-    dialog.close();assert.match(app.el('toast').textContent,/project.*deleted/i);
-  }
-});
 
-test('same-project drafts cannot be falsely saved during or after deletion',async()=>{
-  for(const mode of ['success','partial','uncertain']){
-    const app=await setup();if(mode==='partial')app.failAfterIntent();else app.allow();const release=app.holdDeletion();app.el('edit-context').listeners.click();
-    const pending=app.el('delete-context').listeners.click();app.el('context-dialog').close();app.el('edit-context').listeners.click();
-    app.el('context-name').value='Reopened draft';app.el('context-task').value='Still editing';
-    await app.el('context-form').listeners.submit(submit);
-    assert.match(app.el('context-error').textContent,/deletion.*progress/i);assert.equal(app.el('context-dialog').open,true);
-    app.el('delete-context').listeners.click();assert.equal(app.deleteCalls(),1,'the same project must not send duplicate deletes');
-    if(mode==='uncertain')app.failDelete();release();await pending;
-    assert.match(app.el('context-error').textContent,mode==='uncertain'?/could not confirm/i:/deleted/i);
-    if(mode==='partial')assert.match(app.el('context-error').textContent,/browser changes could not be saved/i);
-    assert.equal(app.el('context-dialog').open,true);assert.equal(app.el('context-name').value,'Reopened draft');
-    await app.el('context-form').listeners.submit(submit);
-    assert.equal(app.el('context-dialog').open,true,'unsafe save must leave draft open');
-    assert.match(app.el('context-error').textContent,mode==='uncertain'?/could not confirm/i:/deleted/i);
-    if(mode==='partial')assert.match(app.el('context-error').textContent,/browser changes could not be saved/i,'partial deletion warning must survive a blocked save');
-    assert.doesNotMatch(app.el('toast').textContent,/context saved/i);
-  }
-});
 
-test('a hung deletion times out into uncertainty without claiming it was canceled',async()=>{
-  const app=await setup({fakeTimers:true});app.allow();app.holdDeletion();app.el('edit-context').listeners.click();
-  const pending=app.el('delete-context').listeners.click();app.el('context-name').value='Preserved draft';
-  const deadline=[...app.timers.values()].find(timer=>timer.ms===10000);assert.ok(deadline,'deletion request must be bounded');
-  deadline.fn();await pending;
-  assert.equal(app.el('context-dialog').open,true);assert.equal(app.el('context-name').value,'Preserved draft');
-  assert.match(app.el('context-error').textContent,/could not confirm.*reload/i);
-  await app.el('context-form').listeners.submit(submit);
-  assert.equal(app.el('context-dialog').open,true);assert.match(app.el('context-error').textContent,/could not confirm/i);
-  assert.doesNotMatch(app.el('context-error').textContent,/canceled|cancelled/i);
-  assert.equal([...app.timers.values()].filter(timer=>timer.ms===10000).length,0,'request timer must be cleared');
-});
 
-test('video draft cannot be saved to a pending, deleted, uncertain or unavailable project',async()=>{
-  for(const mode of ['success','uncertain']){
-    const app=await setup({extraProject:true});app.allow();const release=app.holdDeletion();
-    app.el('edit-context').listeners.click();const pending=app.el('delete-context').listeners.click();app.el('context-dialog').close();
-    app.el('add-video').listeners.click();app.el('video-url').value='https://youtu.be/xyz123abc45';app.el('video-title').value='Preserved video draft';app.el('video-context').value='project';
-    await app.el('video-form').listeners.submit(submit);
-    assert.equal(app.el('video-dialog').open,true);assert.match(app.el('video-error').textContent,/deletion.*progress/i);assert.deepEqual(app.saved().customVideos,[]);
-    if(mode==='uncertain')app.failDelete();release();await pending;
-    await app.el('video-form').listeners.submit(submit);
-    assert.equal(app.el('video-dialog').open,true);assert.equal(app.el('video-title').value,'Preserved video draft');
-    assert.match(app.el('video-error').textContent,mode==='uncertain'?/could not confirm/i:/deleted|unavailable/i);assert.deepEqual(app.saved().customVideos,[]);
-    app.el('video-context').value='missing';await app.el('video-form').listeners.submit(submit);
-    assert.equal(app.el('video-dialog').open,true);assert.match(app.el('video-error').textContent,/unavailable/i);assert.deepEqual(app.saved().customVideos,[]);
-    app.el('video-context').value='other';await app.el('video-form').listeners.submit(submit);
-    if(mode==='uncertain'){assert.equal(app.el('video-dialog').open,true);assert.match(app.el('video-error').textContent,/deletion is unresolved/i);assert.deepEqual(app.saved().customVideos,[])}
-    else{assert.equal(app.el('video-dialog').open,false);assert.equal(app.saved().customVideos[0].context,'other');assert.equal(app.saved().customVideos[0].title,'Preserved video draft')}
-  }
-});
+
+
+
+
+
+
 
 test('a failed video save can retry the same open draft',async()=>{
   const app=await setup(),el=app.el;el('add-video').listeners.click();
@@ -177,4 +94,8 @@ test('manual video associations are scoped to projects and removed videos requir
   assert.equal(el('video-dialog').open,true);assert.match(el('video-error').textContent,/Recently removed/i);assert.equal(app.saved().customVideos.length,1);assert.equal(app.saved().customVideos[0].reason,'My original reason');assert.deepEqual(app.saved().hiddenVideos,['abc123def45']);
   el('video-dialog').close();el('show-removed').listeners.click();await el('removed-list').listeners.click({target:{closest:s=>s==='[data-restore-video]'?{dataset:{restoreVideo:'abc123def45'},disabled:false,setAttribute(){},removeAttribute(){}}:null}});assert.deepEqual(app.saved().hiddenVideos,[]);assert.match(el('grid').innerHTML,/My other project title/);
   el('context-nav').listeners.click(click('[data-context]','project'));assert.match(el('grid').innerHTML,/Existing video/);
+});
+
+test('disabled deletion does not send requests or mutate a project, even when storage fails',async()=>{
+ for(const writable of [false,true]){const app=await setup();if(writable)app.allow();app.el('edit-context').listeners.click();const original=app.saved();await app.el('delete-context').listeners.click();assert.equal(app.deleteCalls(),0);assert.deepEqual(app.saved(),original);assert.equal(app.el('context-dialog').open,true);assert.match(app.el('context-error').textContent,/temporarily unavailable/i)}
 });

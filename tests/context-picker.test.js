@@ -30,11 +30,11 @@ test('selected projects edit directly; new and empty-project flows still create'
 
 test('stale selections cannot be edited, deleted, copied or turned into new projects',async()=>{
  const b=await setup();b.el('edit-context').listeners.click();b.feed.contexts=b.feed.contexts.filter(c=>c.id!=='a');choose(b,'a');assert.match(b.el('context-choose-error').textContent,/available/i);assert.equal(b.el('context-dialog').open,false);
- choose(b,'b');b.feed.contexts=[];b.el('context-name').value='Draft';await b.el('context-form').listeners.submit(event);assert.match(b.el('context-error').textContent,/deleted|unavailable/i);await b.el('delete-context').listeners.click();assert.match(b.el('context-error').textContent,/no longer available/i);await b.el('context-sync').listeners.click();assert.deepEqual(b.requests(),[]);assert.equal(b.raw(),null);assert.equal(b.el('context-name').value,'Draft');
+ choose(b,'b');b.feed.contexts=[];b.el('context-name').value='Draft';await b.el('context-form').listeners.submit(event);assert.match(b.el('context-error').textContent,/deleted|unavailable/i);await b.el('delete-context').listeners.click();assert.match(b.el('context-error').textContent,/temporarily unavailable/i);await b.el('context-sync').listeners.click();assert.deepEqual(b.requests(),[]);assert.equal(b.raw(),null);assert.equal(b.el('context-name').value,'Draft');
 });
 
-test('delete confirmation identifies the chosen project',async()=>{
- const b=await setup();b.el('edit-context').listeners.click();choose(b,'b');await b.el('delete-context').listeners.click();assert.match(b.confirmation(),/Beta/);assert.doesNotMatch(b.confirmation(),/Alpha/);assert.deepEqual(b.requests(),[]);
+test('deletion is unavailable for any selected project',async()=>{
+ const b=await setup();b.el('edit-context').listeners.click();choose(b,'b');assert.equal(b.el('delete-context').disabled,true);await b.el('delete-context').listeners.click();assert.match(b.el('context-error').textContent,/temporarily unavailable/i);assert.deepEqual(b.requests(),[]);assert.equal(b.raw(),null);
 });
 
 test('feed changes while save waits for the lock do not recreate a stale project',async()=>{

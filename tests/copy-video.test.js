@@ -51,11 +51,11 @@ test('globally hidden videos and deleted projects cannot be copied',async()=>{
 });
 
 
-test('copied videos respect separate notes, combined filters and project deletion',async()=>{
+test('copied videos respect separate notes, combined filters and disabled deletion',async()=>{
  const a=await setup({videoNotes:[{id:live,context:'a',text:'private original'},{id:shared,context:'b',text:'other project'}]});
  await a.open(live,'a');a.el('copy-video-project').value='c';await a.submit();assert.deepEqual(a.state().videoNotes,[{id:live,context:'a',text:'private original'},{id:shared,context:'b',text:'other project'}]);
  const filter=(key,id)=>a.el('filters').listeners.click({target:{closest:s=>s===`[data-${key}]`?{dataset:{[key]:id}}:null}});
  filter('context','c');filter('view','saved');assert.match(a.el('grid').innerHTML,/Live only/);assert.match(a.el('grid').innerHTML,/data-note-video="testVideo02" data-note-context="c"/);
  await a.el('grid').listeners.click({target:{closest:s=>s==='[data-note-video]'?{dataset:{noteVideo:live,noteContext:'c'}}:null}});assert.equal(a.el('video-note-text').value,'');a.el('video-note-text').value='destination note';await a.el('video-note-form').listeners.submit({preventDefault(){}});
- a.el('context-id').value='a';await a.el('delete-context').listeners.click();assert.deepEqual(a.state().videoNotes,[{id:shared,context:'b',text:'other project'},{id:live,context:'c',text:'destination note'}]);assert.match(a.el('grid').innerHTML,/Live only/);assert.doesNotMatch(a.el('grid').innerHTML,/private original|destination note/);
+ a.el('context-id').value='a';await a.el('delete-context').listeners.click();assert.deepEqual(a.state().videoNotes,[{id:live,context:'a',text:'private original'},{id:shared,context:'b',text:'other project'},{id:live,context:'c',text:'destination note'}]);assert.match(a.el('grid').innerHTML,/Live only/);assert.doesNotMatch(a.el('grid').innerHTML,/private original|destination note/);
 });
