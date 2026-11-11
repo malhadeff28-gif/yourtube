@@ -43,7 +43,7 @@ function readNew(file){try{
   const got=fs.readSync(fd,buf,0,len,e.offset);
   // Recheck the header and file version before consuming any captured text.
   const stillPermitted=allowed(fd),after=fs.fstatSync(fd,{bigint:true});
-  let current;try{current=fs.statSync(file,{bigint:true})}catch{current=null}
+  let current;try{current=fs.statSync(file,{bigint:true})}catch(err){if(err.code==='ENOENT'){clearFileHistory(file);entries.delete(file);return}current=null}
   if(stillPermitted!==true||!current||before.dev!==after.dev||before.ino!==after.ino||before.size!==after.size||before.mtimeNs!==after.mtimeNs||before.ctimeNs!==after.ctimeNs||current.dev!==after.dev||current.ino!==after.ino||current.size!==after.size||current.mtimeNs!==after.mtimeNs||current.ctimeNs!==after.ctimeNs){
     // A concurrent write, rewrite, or pathname swap makes the captured bytes uncertain.
     // Skip them; a later event can establish a fresh safe baseline.
@@ -65,7 +65,7 @@ function readNew(file){try{
   }
   if(got>0&&e.offset<stat.size&&!e.scheduled){e.scheduled=true;setImmediate(()=>{e.scheduled=false;readNew(file)})}
   }finally{fs.closeSync(fd)}
-}catch(err){if(err.code!=='ENOENT')setState('error','Could not read a local chat event.')}}
+}catch(err){if(err.code==='ENOENT'){clearFileHistory(file);entries.delete(file)}else setState('error','Could not read a local chat event.')}}
 function consumeLine(file,line){
   let record;try{record=JSON.parse(line)}catch{return}
   if(!record||typeof record!=='object'||Array.isArray(record))return;
