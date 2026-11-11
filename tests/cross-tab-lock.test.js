@@ -124,3 +124,15 @@ test('pending deletion without Web Locks cannot falsely offer recovery',async()=
  const marker=JSON.stringify({__yourtubePendingDeletion:{id:'project',token:'test-token'}}),data=shared(marker);const a=await tab(data,{noLocks:true});
  assert.equal(a('storage-retry-delete').hidden,true);assert.match(a('storage-warning').textContent,/same profile/i);assert.equal(data.deleteCalls,0);
 });
+
+test('delayed card write reports conflicts, failures and removal after an open dialog closes',async()=>{
+ for(const mode of ['busy','failure','remove']){
+  const data=shared();let release;const gate=new Promise(resolve=>{release=resolve});data.locks.request=async(_key,_opts,callback)=>{await gate;return callback(mode==='busy'?null:{})};
+  if(mode==='failure')data.storage.setItem=()=>{throw Error('quota')};
+  const a=await tab(data);const attribute=mode==='remove'?'hide':'save';
+  const saving=a('grid').listeners.click({target:{closest:selector=>selector===`[data-${attribute}]`?{dataset:{[attribute]:'abc123def45'}}:null}});
+  draft(a,'Keep this draft');release();await saving;
+  assert.equal(a('context-dialog').open,true);assert.equal(a('context-name').value,'Keep this draft');assert.equal(a('toast').textContent,'','notification must wait until the modal is closed');
+  a('context-dialog').close();assert.match(a('toast').textContent,mode==='busy'?/another.*saving/i:mode==='failure'?/could not save/i:/video removed/i);
+ }
+});

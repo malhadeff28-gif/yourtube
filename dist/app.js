@@ -72,8 +72,8 @@ document.querySelectorAll('.nav').forEach(button=>button.addEventListener('click
 $('grid').addEventListener('click',async e=>{
  const play=e.target.closest('[data-play]'),save=e.target.closest('[data-save]'),hide=e.target.closest('[data-hide]');
  if(play){const video=visibleVideos().find(v=>v.id===play.dataset.play);if(!video)return;$('player-title').textContent=video.title;$('open-youtube').href=`https://www.youtube.com/watch?v=${video.id}`;const frame=document.createElement('iframe');frame.title=video.title;frame.src=`https://www.youtube-nocookie.com/embed/${video.id}?rel=0`;frame.allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';frame.referrerPolicy='strict-origin-when-cross-origin';frame.allowFullscreen=true;$('player').replaceChildren(frame);$('player-dialog').showModal()}
- if(save){const id=save.dataset.save,saved=state.saved.includes(id)?state.saved.filter(x=>x!==id):[...state.saved,id],result=await persist({...state,saved});if(result.ok)render();else toast(result.error)}
- if(hide&&confirm('Remove this video from your feed?')){const id=hide.dataset.hide,next={...state,hiddenVideos:[...state.hiddenVideos,id],saved:state.saved.filter(x=>x!==id)},result=await persist(next);if(result.ok){render();toast('Video removed from your feed.')}else toast(result.error)}
+ if(save){const id=save.dataset.save,saved=state.saved.includes(id)?state.saved.filter(x=>x!==id):[...state.saved,id],result=await persist({...state,saved});if(result.ok)render();else reportDeletion(result.error)}
+ if(hide&&confirm('Remove this video from your feed?')){const id=hide.dataset.hide,next={...state,hiddenVideos:[...state.hiddenVideos,id],saved:state.saved.filter(x=>x!==id)},result=await persist(next);if(result.ok){render();reportDeletion('Video removed from your feed.')}else reportDeletion(result.error)}
 });
 $('player-dialog').addEventListener('close',()=>$('player').replaceChildren());
 document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$(button.dataset.close).close()));
