@@ -6,16 +6,19 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { setImmediate: tick } = require('node:timers/promises');
 
-async function setup() {
+async function setup({fakeTimers=false}={}) {
   const elements = new Map();
   function el(id){if(!elements.has(id))elements.set(id,{id,disabled:false,value:'',textContent:'',innerHTML:'',open:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(k,f){this.listeners[k]=f},showModal(){this.open=true},close(){this.open=false;this.listeners.close?.()},replaceChildren(){},reset(){}});return elements.get(id)}
-  let state=JSON.stringify({customVideos:[],customContexts:[],contextEdits:{},deletedContexts:[],hiddenVideos:[],saved:[]}), fail=true, deleteFail=false, refreshFail=false, initialLoaded=false, deletionGate=null, deleteCount=0;
+  let state=JSON.stringify({customVideos:[],customContexts:[],contextEdits:{},deletedContexts:[],hiddenVideos:[],saved:[]}), fail=true, deleteFail=false, refreshFail=false, initialLoaded=false, deletionGate=null, deleteCount=0, timerId=0;
+  const timers=new Map();
+  const schedule=fakeTimers?(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id}:setTimeout;
+  const unschedule=fakeTimers?id=>timers.delete(id):clearTimeout;
   let feed={contexts:[{id:'project',name:'Project',task:'Task'}],videos:[{id:'abc123def45',context:'project',title:'Existing video',channel:'Sample',reason:'Example',source:'Fixture'}],focusContext:'project',contextSource:'Fixture'};
   class FakeEvents{constructor(){this.listeners={}}addEventListener(k,f){this.listeners[k]=f}close(){}}
   const dialogIds=['context-dialog','video-dialog','player-dialog','info-dialog','live-consent','search-review'];
-  const context={window:{},document:{getElementById:el,querySelector:selector=>selector==='dialog[open]'?dialogIds.map(el).find(d=>d.open)||null:null,querySelectorAll:selector=>selector==='dialog'?dialogIds.map(el):[],createElement:()=>el('created')},localStorage:{getItem:()=>state,setItem:(_k,v)=>{if(fail)throw Error('quota exceeded');state=v}},EventSource:FakeEvents,fetch:async(url)=>{if(url==='/api/context/delete'){deleteCount++;if(deletionGate)await deletionGate;if(deleteFail)return {ok:false};feed={...feed,contexts:[],videos:[]};return {ok:true}}if(refreshFail&&initialLoaded)return {ok:false};initialLoaded=true;return {ok:true,json:async()=>feed}},setTimeout,clearTimeout,AbortController,URL,console,crypto:{randomUUID:()=> 'new-project'},confirm:()=>true};
+  const context={window:{},document:{getElementById:el,querySelector:selector=>selector==='dialog[open]'?dialogIds.map(el).find(d=>d.open)||null:null,querySelectorAll:selector=>selector==='dialog'?dialogIds.map(el):[],createElement:()=>el('created')},localStorage:{getItem:()=>state,setItem:(_k,v)=>{if(fail)throw Error('quota exceeded');state=v}},EventSource:FakeEvents,fetch:async(url,options={})=>{if(url==='/api/context/delete'){deleteCount++;if(deletionGate)await Promise.race([deletionGate,new Promise((_,reject)=>options.signal?.addEventListener('abort',()=>reject(Error('aborted'))))]);if(deleteFail)return {ok:false};feed={...feed,contexts:[],videos:[]};return {ok:true}}if(refreshFail&&initialLoaded)return {ok:false};initialLoaded=true;return {ok:true,json:async()=>feed}},setTimeout:schedule,clearTimeout:unschedule,AbortController,URL,console,crypto:{randomUUID:()=> 'new-project'},confirm:()=>true};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),context);await tick();
-  return {el,saved:()=>JSON.parse(state),deleteCalls:()=>deleteCount,allow:()=>{fail=false},failDelete:()=>{deleteFail=true},failRefresh:()=>{refreshFail=true},holdDeletion:()=>{let release;deletionGate=new Promise(resolve=>{release=resolve});return release}};
+  return {el,timers,saved:()=>JSON.parse(state),deleteCalls:()=>deleteCount,allow:()=>{fail=false},failDelete:()=>{deleteFail=true},failRefresh:()=>{refreshFail=true},holdDeletion:()=>{let release;deletionGate=new Promise(resolve=>{release=resolve});return release}};
 }
 const submit={preventDefault(){}};
 const click=(selector,id)=>({target:{closest:s=>s===selector?{dataset:{[selector.slice(6,-1)]:id}}:null}});
@@ -111,4 +114,17 @@ test('same-project drafts cannot be falsely saved during or after deletion',asyn
     if(mode==='partial')assert.match(app.el('context-error').textContent,/browser changes could not be saved/i,'partial deletion warning must survive a blocked save');
     assert.doesNotMatch(app.el('toast').textContent,/context saved/i);
   }
+});
+
+test('a hung deletion times out into uncertainty without claiming it was canceled',async()=>{
+  const app=await setup({fakeTimers:true});app.allow();app.holdDeletion();app.el('edit-context').listeners.click();
+  const pending=app.el('delete-context').listeners.click();app.el('context-name').value='Preserved draft';
+  const deadline=[...app.timers.values()].find(timer=>timer.ms===10000);assert.ok(deadline,'deletion request must be bounded');
+  deadline.fn();await pending;
+  assert.equal(app.el('context-dialog').open,true);assert.equal(app.el('context-name').value,'Preserved draft');
+  assert.match(app.el('context-error').textContent,/could not confirm.*reload/i);
+  app.el('context-form').listeners.submit(submit);
+  assert.equal(app.el('context-dialog').open,true);assert.match(app.el('context-error').textContent,/could not confirm/i);
+  assert.doesNotMatch(app.el('context-error').textContent,/canceled|cancelled/i);
+  assert.equal([...app.timers.values()].filter(timer=>timer.ms===10000).length,0,'request timer must be cleared');
 });
