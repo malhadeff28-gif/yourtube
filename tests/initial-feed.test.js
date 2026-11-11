@@ -82,3 +82,35 @@ test('a corrupt feed still permits an explicit pause with honest failure feedbac
   assert.match(warning.textContent,/Could not confirm Live is paused/);
   assert.deepEqual(requests,[{enabled:false},{enabled:false},{enabled:false}]);
 });
+
+for (const [label, badFeed] of [
+  ['null context', {contexts:[null],videos:[]}],
+  ['malformed context', {contexts:[{id:'a',name:{},task:'Study'}],videos:[]}],
+  ['null video', {contexts:[],videos:[null]}],
+  ['malformed video', {contexts:[],videos:[{id:'abc123def45',context:42}]}],
+]) test(`${label} offers a pause-only fallback and retry`, async () => {
+  const elements=new Map(),calls=[];let elementId=0;
+  function element(id){if(!elements.has(id))elements.set(id,{id,disabled:false,value:'',textContent:'',innerHTML:'',open:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},children:[],addEventListener(type,fn){this.listeners[type]=fn},setAttribute(){},showModal(){this.open=true},close(){this.open=false},replaceChildren(...children){this.children=children}});return elements.get(id)}
+  const fetch=async(url,options={})=>{if(url==='feed.json')return {ok:true,json:async()=>badFeed};if(url==='/api/live'){calls.push(JSON.parse(options.body));return {ok:true,json:async()=>({enabled:false,mode:'paused'})}}throw Error('unexpected request')};
+  const context={window:{},document:{getElementById:element,querySelectorAll:()=>[],createElement:tag=>element(`new-${tag}-${++elementId}`)},localStorage:{getItem:()=>null,setItem(){}},EventSource:class{},fetch,setTimeout,clearTimeout,AbortController,URL,console};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),context);await tick();
+  const [warning,retry,pause]=element('grid').children;
+  assert.match(warning.textContent,/Live may still be on/);
+  assert.match(retry.textContent,/retry/i);
+  assert.equal(element('live-toggle').disabled,true);
+  assert.deepEqual(calls,[]);
+  await pause.listeners.click();assert.deepEqual(calls,[{enabled:false}]);
+});
+
+test('unexpected initialization failure keeps a pause action and reloads on retry', async () => {
+  const elements=new Map(),calls=[];let elementId=0,reloads=0;
+  function element(id){if(!elements.has(id))elements.set(id,{id,disabled:false,value:'',textContent:'',innerHTML:'',open:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},children:[],addEventListener(type,fn){this.listeners[type]=fn},setAttribute(){},showModal(){this.open=true},close(){this.open=false},replaceChildren(...children){this.children=children}});return elements.get(id)}
+  const fetch=async(url,options={})=>{if(url==='feed.json')return {ok:true,json:async()=>({contexts:[],videos:[]})};if(url==='/api/live'){calls.push(JSON.parse(options.body));return {ok:true,json:async()=>({enabled:false,mode:'paused'})}}throw Error('unexpected request')};
+  const context={window:{location:{reload(){reloads++}}},document:{getElementById:element,querySelectorAll(){throw Error('synthetic initialization failure')},createElement:tag=>element(`new-${tag}-${++elementId}`)},localStorage:{getItem:()=>null,setItem(){}},EventSource:class{},fetch,setTimeout,clearTimeout,AbortController,URL,console};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),context);await tick();
+  const [warning,retry,pause]=element('grid').children;
+  assert.match(warning.textContent,/Live may still be on/);
+  assert.equal(element('live-toggle').disabled,true);
+  await pause.listeners.click();assert.deepEqual(calls,[{enabled:false}]);
+  retry.listeners.click();assert.equal(reloads,1,'partial initialization must reload instead of registering duplicate listeners');
+});
