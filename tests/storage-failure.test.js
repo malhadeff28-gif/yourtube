@@ -149,3 +149,11 @@ test('video draft cannot be saved to a pending, deleted, uncertain or unavailabl
     else{assert.equal(app.el('video-dialog').open,false);assert.equal(app.saved().customVideos[0].context,'other');assert.equal(app.saved().customVideos[0].title,'Preserved video draft')}
   }
 });
+
+test('a failed video save can retry the same open draft',async()=>{
+  const app=await setup(),el=app.el;el('add-video').listeners.click();
+  el('video-url').value='https://youtu.be/xyz123abc45';el('video-title').value='Original draft';el('video-context').value='project';
+  await el('video-form').listeners.submit(submit);assert.equal(el('video-dialog').open,true);assert.match(el('video-error').textContent,/could not save/i);
+  app.allow();await el('video-form').listeners.submit(submit);
+  assert.equal(el('video-dialog').open,false);assert.equal(app.saved().customVideos[0].title,'Original draft');
+});
