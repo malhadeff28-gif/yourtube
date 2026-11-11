@@ -26,6 +26,7 @@ const fs=require('node:fs');process.stdin.resume();process.stdin.on('end',()=>{c
  const append=text=>fs.appendFileSync(session,JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text}]}})+'\n');
  const pending=async previous=>waitFor(async()=>{const s=await readStatus(base);if(s.mode==='error')throw Error(s.message);return s.mode==='awaiting-review'&&s.requestId!==previous&&s},'review not reached');
  append('A synthetic topic to classify for project selection.');let review=await pending();assert.equal(review.pendingProject.id,'a');assert.deepEqual(review.projectOptions.map(x=>x.id),['a','b']);
+ const snapshot=JSON.parse(fs.readFileSync(feed,'utf8')).contexts.find(x=>x.id==='a');assert.equal((await post('/api/context/sync',{id:'a',name:'Concurrent edit',task:'Concurrent task',expected:snapshot})).status,409,'copying context must wait until the pending project review finishes');
  const draft={requestId:review.requestId,action:'approve',query:'synthetic topic',projectId:'b',projectName:'Reviewed Beta',projectTask:'Reviewed task'};
  assert.equal((await post('/api/search-review',{...draft,projectId:'unknown'})).status,400,'unoffered project must be rejected');
  assert.equal((await post('/api/search-review',{...draft,projectName:' '})).status,400,'blank project name must be rejected');
