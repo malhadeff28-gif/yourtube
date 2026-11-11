@@ -14,6 +14,8 @@ test('search waits for a valid user-approved phrase', { timeout: 12000 }, async 
   const sessions = path.join(dir, 'sessions'); fs.mkdirSync(sessions);
   const session = path.join(sessions, 'session.jsonl');
   fs.writeFileSync(session, JSON.stringify({ type: 'session_meta', payload: { originator: 'Codex Desktop', source: 'vscode', thread_source: 'user' } }) + '\n');
+  const feed = path.join(dir, 'feed.json');
+  fs.writeFileSync(feed, JSON.stringify({contexts:[{id:'example',name:'Photography contact@example.com',task:'Study https://example.com/private token=synthetic-secret'}],videos:[],focusContext:'example'}));
   const marker = path.join(dir, 'calls');
   const fake = path.join(dir, 'fake-codex');
   fs.writeFileSync(fake, `#!/usr/bin/env node
@@ -28,7 +30,7 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   const base = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], { cwd: path.resolve(__dirname, '..'), env: {
     ...process.env, YOURTUBE_PORT: String(port), YOURTUBE_SESSIONS_DIR: sessions,
-    YOURTUBE_FEED: path.join(dir, 'feed.json'), YOURTUBE_SETTINGS: path.join(dir, 'settings.json'),
+    YOURTUBE_FEED: feed, YOURTUBE_SETTINGS: path.join(dir, 'settings.json'),
     YOURTUBE_CODEX: fake, YOURTUBE_DEBOUNCE_MS: '40', TEST_MARKER: marker,
   }, stdio: 'ignore' });
   t.after(async () => { if(child.exitCode===null){const done=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true}) });
@@ -40,8 +42,20 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   fs.appendFileSync(session,JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'A synthetic message about studying a topic.'}]}})+'\n');
   let pending = await waitFor(async()=>{const s=await status();return s.mode==='awaiting-review'&&s});
   assert.equal(pending.pendingQuery,'original topic');
+  // A newly discovered chat can be baselined while a prior search awaits review.
+  // The warning must not replace or change the in-flight approval request.
+  fs.writeFileSync(path.join(sessions,'unseen.jsonl'),JSON.stringify({type:'session_meta',payload:{originator:'Codex Desktop',source:'vscode',thread_source:'user'}})+'\n'+JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'A synthetic newly discovered work message.'}]}})+'\n');
+  const warning = await waitFor(async()=>{const s=await status();return s.activityMayBeMissed&&s});
+  assert.equal(warning.mode,'awaiting-review');
+  assert.equal(warning.requestId,pending.requestId);
+  assert.equal(warning.pendingQuery,pending.pendingQuery);
   await delay(200);
   assert.equal(fs.readFileSync(marker,'utf8').trim().split('\n').length,1,'search must not start before review');
+  const classification = JSON.parse(fs.readFileSync(marker,'utf8').trim()).input;
+  assert.match(classification, /Photography \[email\]/);
+  assert.match(classification, /Study \[link\] \[credential\]/);
+  assert.match(classification, /"id":"example"/);
+  assert.doesNotMatch(classification, /contact@example\.com|example\.com\/private|synthetic-secret/);
   const client=net.connect(port,'127.0.0.1');
   await new Promise((resolve,reject)=>{client.once('connect',resolve);client.once('error',reject)});
   const partial=JSON.stringify({requestId:pending.requestId,action:'approve',query:'unapproved phrase'}).slice(0,-1);

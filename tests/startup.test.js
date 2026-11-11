@@ -119,6 +119,9 @@ test('fresh startup, consent, pause, and restart', { timeout: 15000 }, async t =
   assert.deepEqual(initial.contexts, []);
   assert.deepEqual(initial.videos, []);
   assert.equal((await readStatus(url)).mode, 'paused');
+  const stale = await fetch(`${url}/api/live`, { method:'POST', headers:{'content-type':'application/json',origin:url}, body:JSON.stringify({enabled:true,expectedEnabled:true}) });
+  assert.equal(stale.status,409,'a stale expected state must not enable Live');
+  assert.equal((await readStatus(url)).mode, 'paused');
   const demo = await (await fetch(`${url}/demo.html`)).text();
   assert.match(demo, /SAMPLE MODE/);
   assert.doesNotMatch(demo, /<(?:script|img|iframe)\b/i, 'sample page must not load model or video content');
