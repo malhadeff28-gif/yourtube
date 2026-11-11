@@ -22,7 +22,7 @@ cd yourtube
 node server.js
 ```
 
-Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an empty feed and live chat reading **paused**. After reading the privacy section, click **Live** in the app to enable it. Stop the server with Ctrl-C.
+Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an empty feed and live chat reading **paused**. Live always starts paused after a service restart, even if it was enabled before; after reading the privacy section, click **Live** in the app to enable it for the current run. Stop the server with Ctrl-C.
 
 For a no-chat example, select **Try a sample feed** on an empty feed or visit [the sample page](http://127.0.0.1:8765/demo.html). It contains static example videos and makes no model or YouTube requests until you choose an external video link.
 
@@ -39,7 +39,8 @@ Optionally, `python3 scripts/service.py install` installs a macOS per-user Launc
 - While live mode is enabled, the watcher reads new user text from local Codex Desktop chat files. Up to three recent messages per chat are briefly kept in memory for follow-ups. Pausing clears that memory and discards events while paused.
 - A short excerpt is sent to Codex after best-effort redaction, before search review. **Redaction can miss sensitive information.** Search providers receive the phrase you approve; review it for private details. Pause live mode when discussing anything you do not want processed this way. The app uses your Codex account and may consume its usage allowance.
 - YouTube receives video IDs for metadata verification and requests for thumbnails and playback. No YouTube account or API key is used by the app.
-- Inferred project descriptions and video metadata are stored locally in `dist/feed.json`; browser edits and saved videos are stored in browser site data. Neither is encrypted. The live feed and settings are ignored by Git; do not commit them.
+- Inferred project descriptions and video metadata are stored locally in `dist/feed.json`; browser edits and saved videos are stored in browser site data. Neither is encrypted. The live feed and any legacy settings are ignored by Git; do not commit them.
+- Codex output is temporarily written to the operating system temporary directory. The app attempts cleanup and waits briefly during normal shutdown; an error, timeout, or abrupt termination can leave a file behind. When cleanup fails or times out, live reading is paused and cannot be re-enabled in that process; stop the service and check the temporary directory before restarting. Cleanup errors are reported to the service’s standard error, which may not be visible when run as a background service.
 - The server binds to loopback and is intended for a single user on their own computer. It has not been audited for shared environments. It cannot follow ChatGPT web/mobile, cloud-only chats, or messages sent while the service is stopped.
 
 ## Verification and limitations

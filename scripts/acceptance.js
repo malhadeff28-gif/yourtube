@@ -83,7 +83,7 @@ async function main() {
   }
   await post(base, '/api/live', { enabled: false }); await stop();
   start(); await ready();
-  if ((await status(base)).mode !== 'paused') throw Error('pause did not persist across restart');
-  console.log(`PASS: ${mode.slice(2)} classification, review, search, feed update and persisted pause. All state was temporary.`);
+  if ((await status(base)).mode !== 'paused') throw Error('service did not restart paused');
+  console.log(`PASS: ${mode.slice(2)} classification, review, search, feed update and paused restart. All state was temporary.`);
 }
 main().catch(error => { console.error('FAIL:', error.message); process.exitCode = 1; }).finally(async () => { await stop(); fs.rmSync(temp, { recursive: true, force: true }); });

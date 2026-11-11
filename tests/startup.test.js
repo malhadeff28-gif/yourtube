@@ -75,6 +75,8 @@ test('fresh startup, consent, pause, and restart', { timeout: 15000 }, async t =
   fs.writeFileSync(fakeCodex, `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.TEST_MARKER, 'called\\n');\nprocess.stdin.resume();\nprocess.exitCode = 1;\n`, { mode: 0o755 });
   const feed = path.join(temp, 'feed.json');
   const settings = path.join(temp, 'settings.json');
+  // Simulate a stale setting left by an older version after a failed pause write.
+  fs.writeFileSync(settings, JSON.stringify({ enabled: true }));
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   let child;
@@ -135,8 +137,15 @@ test('fresh startup, consent, pause, and restart', { timeout: 15000 }, async t =
   fs.appendFileSync(session, userEvent('A fresh work message after live mode is enabled.'));
   await waitFor(() => fs.existsSync(marker), 'new live event did not invoke the fake Codex');
 
+  await stop();
+  await start();
+  assert.equal((await readStatus(url)).mode, 'paused', 'restart must not restore live consent');
+  const callsBeforePausedEvent = fs.readFileSync(marker, 'utf8');
+  fs.appendFileSync(session, userEvent('A synthetic message sent after the service restarted.'));
+  await delay(250);
+  assert.equal(fs.readFileSync(marker, 'utf8'), callsBeforePausedEvent, 'restart must not send paused messages to Codex');
+  await setLive(url, true);
   assert.equal((await setLive(url, false)).status, 200);
-  assert.equal(JSON.parse(fs.readFileSync(settings)).enabled, false);
   await stop();
   await start();
   assert.equal((await readStatus(url)).mode, 'paused');
