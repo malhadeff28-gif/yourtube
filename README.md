@@ -24,6 +24,8 @@ node server.js
 
 Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an empty feed and live chat reading **paused**. Live always starts paused after a service restart, even if it was enabled before; after reading the privacy section, click **Live**, review the disclosure, and select **Enable Live** to enable it for the current run. Canceling the dialog leaves Live paused. Stop the server with Ctrl-C.
 
+To edit a project from **All projects**, choose the project in the picker first. Deletion confirms the saved project name.
+
 Use **Edit details** on a browser-added video to change its title, channel, or reason for that project. These edits stay in this browser and do not change the server’s Live feed or other project associations.
 
 Use **Add note** on any video to save a note for that video and project in this browser. Notes are excluded from project exports unless you explicitly choose to include them and are not sent to Codex; browser site data is not encrypted. Deleting a project deletes its notes in this browser.
