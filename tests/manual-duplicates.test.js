@@ -59,3 +59,22 @@ test('manual and live copies show once overall while remaining in their projects
   assert.match(grid(),/My own notes/);
   assert.equal(JSON.parse(saved).customVideos[0].reason,'My own notes','deduplication must not alter stored manual data');
 });
+
+test('two Live associations retain project-specific reasons and one overall card', async () => {
+  const elements=new Map();
+  function element(id){if(!elements.has(id))elements.set(id,{id,disabled:false,value:'',textContent:'',innerHTML:'',open:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(type,fn){this.listeners[type]=fn},showModal(){this.open=true},close(){this.open=false},replaceChildren(){}});return elements.get(id)}
+  const feed={contexts:[{id:'a',name:'Project A',task:'Work A'},{id:'b',name:'Project B',task:'Work B'}],videos:[{id:'abc123def45',context:'a',title:'Video',channel:'Channel',reason:'Reason for A',source:'Live'},{id:'abc123def45',context:'b',title:'Video',channel:'Channel',reason:'Reason for B',source:'Live'}],focusContext:'',contextSource:'Synthetic'};
+  class FakeEvents{addEventListener(){} close(){}}
+  const context={window:{},document:{getElementById:element,querySelectorAll:()=>[],createElement:()=>element('new')},localStorage:{getItem:()=>JSON.stringify({saved:['abc123def45']}),setItem(){}},EventSource:FakeEvents,fetch:async()=>({ok:true,json:async()=>feed}),setTimeout,clearTimeout,AbortController,URL,console};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),context);
+  await tick();
+  const grid=()=>element('grid').innerHTML;
+  const cardCount=()=>[...grid().matchAll(/<article class="card">/g)].length;
+  assert.equal(cardCount(),1,'all-project view must show one card');
+  const choose=id=>element('context-nav').listeners.click({target:{closest:()=>({dataset:{context:id}})}});
+  choose('a');assert.equal(cardCount(),1);assert.match(grid(),/Reason for A/);assert.doesNotMatch(grid(),/Reason for B/);
+  choose('b');assert.equal(cardCount(),1);assert.match(grid(),/Reason for B/);assert.doesNotMatch(grid(),/Reason for A/);
+  element('filters').listeners.click({target:{closest:selector=>selector==='[data-view]'?{}:null}});
+  assert.equal(element('feed-title').textContent,'Your watch later list');
+  assert.equal(cardCount(),1,'watch later must show one card for the shared ID');
+});
