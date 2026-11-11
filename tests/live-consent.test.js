@@ -32,6 +32,7 @@ test('enabling Live requires an explicit review and confirmation', async()=>{
  const consent=html.match(/<dialog id="live-consent"[\s\S]*?<\/dialog>/)[0];
  const info=html.match(/<dialog id="info-dialog"[\s\S]*?<\/dialog>/)[0];
  assert.match(consent,/Live may miss the first message in a newly discovered chat/);
+ assert.match(consent,/including messages sent while paused, may be read after Live is enabled/);
  assert.match(info,/including text written while paused, to be read after Live is enabled/);
 });
 
