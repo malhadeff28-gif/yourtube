@@ -10,28 +10,34 @@ let clients=new Set(), entries=new Map(), queue=[], recent=new Map(), expiry=new
 let state={mode:'starting',message:'Starting live chat connection',lastUpdate:null,lastSearch:null};
 function notify(type,value){const body=`event: ${type}\ndata: ${JSON.stringify(value)}\n\n`;for(const r of clients)r.write(body)}
 function setState(mode,message,more={}){state={...state,mode,message,...more,enabled,watcherReady:Boolean(watcher)};notify('status',state)}
-function walk(dir){for(const d of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,d.name);if(d.isDirectory())walk(p);else if(d.isFile()&&p.endsWith('.jsonl'))entries.set(p,{offset:fs.statSync(p).size,pending:'',allowed:null});}}
-function allowed(file){try{const fd=fs.openSync(file,'r'),buf=Buffer.alloc(262144),size=fs.readSync(fd,buf,0,buf.length,0);fs.closeSync(fd);const line=buf.subarray(0,size).toString('utf8').split('\n')[0],head=JSON.parse(line),meta=head.payload||{};return head.type==='session_meta'&&meta.originator==='Codex Desktop'&&meta.source==='vscode'&&['user','agent_created_thread',null,undefined].includes(meta.thread_source);}catch{return null}}
+function walk(dir){for(const d of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,d.name);if(d.isDirectory())walk(p);else if(d.isFile()&&p.endsWith('.jsonl')){const stat=fs.statSync(p);entries.set(p,{offset:stat.size,dev:stat.dev,ino:stat.ino,pending:'',allowed:null})}}}
+function allowed(fd){try{const buf=Buffer.alloc(262144),size=fs.readSync(fd,buf,0,buf.length,0);const line=buf.subarray(0,size).toString('utf8').split('\n')[0],head=JSON.parse(line),meta=head.payload||{};return head.type==='session_meta'&&meta.originator==='Codex Desktop'&&meta.source==='vscode'&&['user','agent_created_thread',null,undefined].includes(meta.thread_source);}catch{return null}}
 function redact(s){return s.replace(/https?:\/\/\S+/gi,'[link]').replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi,'[email]').replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{12,}\b/g,'[key]').replace(/\b(?:password|passcode|token|secret|api[-_ ]?key)\s*[:=]\s*\S+/gi,'[credential]').replace(/(?:\/[\w .-]+){3,}/g,'[path]').slice(0,2500)}
 // Read bounded chunks without depending on another fs.watch notification. Keep only
 // complete UTF-8 JSONL records and skip oversized records through their newline.
 const READ_CHUNK_BYTES=512*1024, MAX_RECORD_BYTES=1024*1024;
+function clearFileHistory(file){recent.delete(file);if(expiry.has(file)){clearTimeout(expiry.get(file));expiry.delete(file)}queue=queue.filter(x=>x.file!==file)}
 function readNew(file){try{
-  let e=entries.get(file);
+  const fd=fs.openSync(file,'r');try{
+  const stat=fs.fstatSync(fd);let e=entries.get(file);
   if(!e){
     // The file may have been created while paused or during the enable scan.
     // Establish a baseline instead of replaying bytes of unknown age.
-    const stat=fs.statSync(file);e={offset:stat.size,pending:Buffer.alloc(0),allowed:null};entries.set(file,e);return
+    e={offset:stat.size,dev:stat.dev,ino:stat.ino,pending:Buffer.alloc(0),allowed:null};entries.set(file,e);return
   }
-  const stat=fs.statSync(file);
-  if(stat.size<e.offset){e.offset=0;e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=null}
+  if(e.dev!==stat.dev||e.ino!==stat.ino||stat.size<e.offset){
+    // Replacements and truncations can contain old records, so baseline them.
+    e.offset=stat.size;e.dev=stat.dev;e.ino=stat.ino;e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=null;clearFileHistory(file);return
+  }
   if(stat.size===e.offset)return;
   if(!enabled){e.offset=stat.size;e.pending=Buffer.alloc(0);e.discarding=false;return}
-  if(e.allowed===null)e.allowed=allowed(file);
-  if(e.allowed===null)return;
-  if(!e.allowed){e.offset=stat.size;return}
-  const len=Math.min(stat.size-e.offset,READ_CHUNK_BYTES),fd=fs.openSync(file,'r'),buf=Buffer.alloc(len);
-  let got;try{got=fs.readSync(fd,buf,0,len,e.offset)}finally{fs.closeSync(fd)}
+  // Revalidate the header on the same opened file before processing content.
+  const permitted=allowed(fd);
+  if(permitted===null)return;
+  if(!permitted){e.offset=stat.size;e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=false;clearFileHistory(file);return}
+  e.allowed=true;
+  const len=Math.min(stat.size-e.offset,READ_CHUNK_BYTES),buf=Buffer.alloc(len);
+  const got=fs.readSync(fd,buf,0,len,e.offset);
   e.offset+=got;
   if(!Buffer.isBuffer(e.pending))e.pending=Buffer.alloc(0);
   for(let pos=0;pos<got;){
@@ -47,6 +53,7 @@ function readNew(file){try{
     pos=complete?stop+1:got;
   }
   if(got>0&&e.offset<stat.size&&!e.scheduled){e.scheduled=true;setImmediate(()=>{e.scheduled=false;readNew(file)})}
+  }finally{fs.closeSync(fd)}
 }catch(err){if(err.code!=='ENOENT')setState('error','Could not read a local chat event.')}}
 function consumeLine(file,line){
   let record;try{record=JSON.parse(line)}catch{return}

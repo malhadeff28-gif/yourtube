@@ -19,7 +19,7 @@ async function fixture(t) {
  const hook=path.join(dir,'hook.js');fs.writeFileSync(hook,`const fs=require('fs');const oldWatch=fs.watch,oldRead=fs.readdirSync,oldStat=fs.statSync;let didInject=false,didAppend=false;
  fs.readdirSync=function(dir,...args){if(String(dir)===process.env.TEST_SESSIONS&&fs.existsSync(process.env.TEST_FAIL))throw Error('synthetic snapshot failure');const result=oldRead.call(this,dir,...args);if(String(dir)===process.env.TEST_SESSIONS&&fs.existsSync(process.env.TEST_INJECT)&&!didInject){didInject=true;fs.writeFileSync(process.env.TEST_INJECTED_SESSION,process.env.TEST_INJECTED_CONTENT);fs.writeFileSync(process.env.TEST_INJECTED,'yes')}return result};
  fs.statSync=function(file,...args){const result=oldStat.call(this,file,...args);if(String(file)===process.env.TEST_APPEND_SESSION&&fs.existsSync(process.env.TEST_APPEND)&&!didAppend){didAppend=true;fs.appendFileSync(file,process.env.TEST_APPEND_CONTENT);fs.writeFileSync(process.env.TEST_APPENDED,'yes')}return result};
- fs.watch=function(...args){const cb=args.pop();return oldWatch.call(this,...args,(...e)=>{fs.appendFileSync(process.env.TEST_NOTICE,'x');const deliver=()=>{cb(...e);fs.appendFileSync(process.env.TEST_DELIVERED,'x')};if(fs.existsSync(process.env.TEST_GATE))deliver();else{const t=setInterval(()=>{if(fs.existsSync(process.env.TEST_GATE)){clearInterval(t);deliver()}},10)}})};`);
+ fs.watch=function(...args){const cb=args.pop();return oldWatch.call(this,...args,(...e)=>{fs.appendFileSync(process.env.TEST_NOTICE,'x');const deliver=()=>{cb(...e);fs.appendFileSync(process.env.TEST_DELIVERED,JSON.stringify(e)+'\\n')};if(fs.existsSync(process.env.TEST_GATE))deliver();else{const t=setInterval(()=>{if(fs.existsSync(process.env.TEST_GATE)){clearInterval(t);deliver()}},10)}})};`);
  const fake=path.join(dir,'fake-codex');fs.writeFileSync(fake,`#!/usr/bin/env node\nconst fs=require('fs');let input='';process.stdin.on('data',x=>input+=x);process.stdin.on('end',()=>{fs.appendFileSync(process.env.TEST_MARKER,JSON.stringify(input)+'\\n');process.exit(1)})`,{mode:0o755});
  const socket=http.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));const base=`http://127.0.0.1:${port}`;
  const child=spawn(process.execPath,['server.js'],{cwd:root,env:{...process.env,NODE_OPTIONS:`--require=${hook}`,YOURTUBE_PORT:String(port),YOURTUBE_SESSIONS_DIR:sessions,YOURTUBE_FEED:path.join(dir,'feed.json'),YOURTUBE_CODEX:fake,YOURTUBE_DEBOUNCE_MS:'30',TEST_SESSIONS:sessions,TEST_GATE:gate,TEST_NOTICE:notice,TEST_DELIVERED:delivered,TEST_MARKER:marker,TEST_INJECT:inject,TEST_INJECTED:injected,TEST_INJECTED_SESSION:path.join(sessions,'during-scan.jsonl'),TEST_INJECTED_CONTENT:meta+event('A synthetic paused message created during the snapshot.'),TEST_APPEND:append,TEST_APPENDED:appended,TEST_APPEND_SESSION:path.join(sessions,'known.jsonl'),TEST_APPEND_CONTENT:event('A synthetic paused message appended after its first stat.'),TEST_FAIL:fail},stdio:'ignore'});
@@ -73,4 +73,35 @@ test('a session first discovered live skips existing contents but processes late
  const file=path.join(f.sessions,'new-live.jsonl');fs.writeFileSync(file,meta+event('A first fresh message in a new session.'));
  await waitFor(()=>fs.existsSync(f.delivered));await delay(150);assert.equal(fs.existsSync(f.marker),false,'first discovery deliberately baselines content');
  fs.appendFileSync(file,event('A later fresh message in the new session.'));await waitFor(()=>fs.existsSync(f.marker));assert.match(fs.readFileSync(f.marker,'utf8'),/later fresh message/);
+});
+
+test('a replaced session cannot reuse cached Desktop authorization', {timeout:10000}, async t=>{
+ const f=await fixture(t),file=path.join(f.sessions,'s.jsonl');fs.writeFileSync(file,meta);await waitFor(()=>fs.existsSync(f.notice));
+ assert.equal((await (await f.live(true)).json()).enabled,true);fs.writeFileSync(f.gate,'yes');await waitFor(()=>fs.existsSync(f.delivered));
+ fs.appendFileSync(file,event('A synthetic Desktop message establishing authorization.'));await waitFor(()=>fs.existsSync(f.marker));
+ const oldSize=fs.statSync(file).size;fs.writeFileSync(f.marker,'');
+ const nonDesktop=JSON.stringify({type:'session_meta',payload:{originator:'Other Client',source:'vscode',thread_source:'user'}})+'\n';
+ const padding=oldSize-Buffer.byteLength(nonDesktop);assert.ok(padding>1);
+ const deliveredBefore=fs.readFileSync(f.delivered,'utf8').split('\n').filter(x=>x.includes('s.jsonl')).length;
+ const temporary=path.join(f.sessions,'replacement.tmp');
+ fs.writeFileSync(temporary,nonDesktop+' '.repeat(padding-1)+'\n'+event('A synthetic non Desktop message before replacement was noticed.'));fs.renameSync(temporary,file);
+ await waitFor(()=>fs.readFileSync(f.delivered,'utf8').split('\n').filter(x=>x.includes('s.jsonl')).length>deliveredBefore);await delay(100);
+ fs.appendFileSync(file,event('Another synthetic non Desktop message.'));await delay(250);
+ assert.equal(fs.readFileSync(f.marker,'utf8'),'','non Desktop replacements and later appends must not reach Codex');
+ const beforeSecond=fs.readFileSync(f.delivered,'utf8').split('\n').filter(x=>x.includes('s.jsonl')).length;
+ fs.writeFileSync(temporary,meta+event('A Desktop message already present in the replacement.'));fs.renameSync(temporary,file);
+ await waitFor(()=>fs.readFileSync(f.delivered,'utf8').split('\n').filter(x=>x.includes('s.jsonl')).length>beforeSecond);await delay(100);
+ assert.equal(fs.readFileSync(f.marker,'utf8'),'','replacement content of unknown age is baselined');
+ fs.appendFileSync(file,event('A fresh Desktop message after replacement.'));await waitFor(()=>fs.readFileSync(f.marker,'utf8').includes('fresh Desktop message'));
+ assert.doesNotMatch(fs.readFileSync(f.marker,'utf8'),/already present in the replacement/);
+});
+
+test('an in-place rewrite cannot retain Desktop authorization', {timeout:10000}, async t=>{
+ const f=await fixture(t),file=path.join(f.sessions,'s.jsonl');fs.writeFileSync(file,meta);await waitFor(()=>fs.existsSync(f.notice));
+ assert.equal((await (await f.live(true)).json()).enabled,true);fs.writeFileSync(f.gate,'yes');await waitFor(()=>fs.existsSync(f.delivered));
+ fs.appendFileSync(file,event('A Desktop message establishing authorization for rewrite.'));await waitFor(()=>fs.existsSync(f.marker));
+ const oldSize=fs.statSync(file).size;fs.writeFileSync(f.marker,'');
+ const nonDesktop=JSON.stringify({type:'session_meta',payload:{originator:'Other Client',source:'vscode',thread_source:'user'}})+'\n';
+ fs.writeFileSync(file,nonDesktop+' '.repeat(oldSize)+'\n'+event('A synthetic non Desktop message after rewrite.'));
+ await delay(250);assert.equal(fs.readFileSync(f.marker,'utf8'),'','changed headers must be revalidated even on the same inode');
 });
