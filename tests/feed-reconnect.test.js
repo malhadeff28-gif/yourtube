@@ -47,4 +47,12 @@ test('resynchronizes on reconnect without stale responses or losing navigation',
   pending[0](feed('older')); await tick();
   assert.equal(context.window.SEED.contextSource,'newer','late older response must not replace current feed');
   assert.equal(element('feed-title').textContent,'For Project B','feed resync must preserve active project');
+  pending.length=0;
+  source.emit('feed');
+  pending.shift()({contexts:[null],videos:[],contextSource:'malformed'});await tick();
+  assert.equal(context.window.SEED.contextSource,'newer','malformed refresh must keep the last good feed');
+  assert.equal(element('feed-title').textContent,'For Project B');
+  source.emit('feed');
+  pending.shift()({contexts:[],videos:[null],contextSource:'malformed video'});await tick();
+  assert.equal(context.window.SEED.contextSource,'newer','malformed video refresh must keep the last good feed');
 });
