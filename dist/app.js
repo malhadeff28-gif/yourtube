@@ -42,7 +42,7 @@ function showStorageWarning(message){$('storage-warning').textContent=message||'
 if(storageBlocked||typeof navigator==='undefined'||!navigator.locks?.request)showStorageWarning(pendingRecovery&&typeof navigator!=='undefined'&&navigator.locks?.request?'A previous deletion is not fully resolved. Editing is disabled until you retry it; copy any drafts first.':'Browser data could not be safely accessed or coordinated. Editing is disabled; copy any drafts, then update or reopen this browser in the same profile.');
 let active = window.SEED.focusContext || 'all', view = 'all', liveState = {mode:'connecting', message:'Connecting to local live service.'};
 const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function contexts(){const custom=new Map(state.customContexts.map(c=>[c.id,c])),stored=new Set(window.SEED.contexts.map(c=>c.id));return [...window.SEED.contexts.map(c=>({...c,...custom.get(c.id),...state.contextEdits[c.id]})),...state.customContexts.filter(c=>!stored.has(c.id))].filter(c=>!state.deletedContexts.includes(c.id));}
+function contexts(){ return [...window.SEED.contexts.map(c=>({...c,...state.contextEdits[c.id]})),...state.customContexts].filter(c=>!state.deletedContexts.includes(c.id)); }
 // Prefer a user's manual details where the same video has multiple records.
 // Keep separate project associations so each project's filter remains useful.
 function collapseVideos(items,key){const manual=new Set(state.customVideos),result=[],positions=new Map();for(const video of items){const k=key(video);if(!positions.has(k)){positions.set(k,result.length);result.push(video)}else if(manual.has(video)&&!manual.has(result[positions.get(k)]))result[positions.get(k)]=video}return result}
@@ -111,13 +111,14 @@ $('context-sync').addEventListener('click',async()=>{
  const id=$('context-id').value,generation=contextDialogGeneration,sameDialog=()=>$('context-dialog').open&&generation===contextDialogGeneration&&$('context-id').value===id;
  $('context-error').textContent='';const saved=contexts().find(c=>c.id===id),blocked=contextSaveBlock(id);
  if(!id||!saved){$('context-error').textContent='Save this project in this browser before copying it to Live.';return}
+ if(!window.SEED.contexts.some(c=>c.id===id)){$('context-error').textContent='Browser-only projects cannot yet be copied to Live. No stored project was changed.';return}
  if(blocked){$('context-error').textContent=blocked;return}
  if($('context-name').value.trim()!==saved.name||$('context-task').value.trim()!==saved.task){$('context-error').textContent='Save your name and task edits in this browser first, then reopen this project.';return}
  if(!confirm('Copy this saved project name and task to the local Live feed? When Live is enabled or resumed, these stored details may be sent to Codex after best-effort redaction, including immediately if Live is already enabled. Notes stay in this browser. This does not start Live.'))return;
  contextFormBusy(true);
  const outcome=await withStorageLock(async()=>{
   const current=contexts().find(c=>c.id===id);if(!current||contextSaveBlock(id)||current.name!==saved.name||current.task!==saved.task)return {error:'The browser project changed. Reload and review before copying.'};
-  const expected=window.SEED.contexts.find(c=>c.id===id)||null,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);let response;
+  const expected=window.SEED.contexts.find(c=>c.id===id);if(!expected)return {error:'The stored project is no longer available. Refresh and review before retrying.'};const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);let response;
   try{response=await fetch('/api/context/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name:saved.name,task:saved.task,expected}),signal:controller.signal})}catch{return {error:'Could not confirm whether the project was copied. Refresh and check the stored project before retrying.'}}finally{clearTimeout(timeout)}
   if(response.status===409)return {error:'Live is updating or the stored project changed. Refresh and review it before retrying.'};
   if(!response.ok)return {error:'Could not confirm whether the project was copied. Refresh and check the stored project before retrying.'};

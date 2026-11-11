@@ -148,14 +148,14 @@ const server=http.createServer(async(req,res)=>{let u;try{u=new URL(req.url,`htt
  if(req.headers.origin!==`http://${HOST}:${PORT}`||req.headers['content-type']!=='application/json'){res.writeHead(403).end();return}
  let body='';try{for await(const chunk of req){body+=chunk;if(body.length>16384){res.writeHead(413).end();return}}}catch{if(!res.destroyed&&!res.headersSent)res.writeHead(400).end();return}
  if(shuttingDown){res.writeHead(503).end();return}
- let x;try{x=JSON.parse(body);if(!x||typeof x.id!=='string'||! /^[A-Za-z0-9_-]{1,80}$/.test(x.id)||typeof x.name!=='string'||!x.name.trim()||x.name.trim().length>90||typeof x.task!=='string'||!x.task.trim()||x.task.trim().length>400||!(x.expected===null||(typeof x.expected==='object'&&!Array.isArray(x.expected))))throw Error()}catch{res.writeHead(400).end();return}
+ let x;try{x=JSON.parse(body);if(!x||typeof x.id!=='string'||! /^[A-Za-z0-9_-]{1,80}$/.test(x.id)||typeof x.name!=='string'||!x.name.trim()||x.name.trim().length>90||typeof x.task!=='string'||!x.task.trim()||x.task.trim().length>400||!(x.expected&&typeof x.expected==='object'&&!Array.isArray(x.expected)))throw Error()}catch{res.writeHead(400).end();return}
  if(working||pendingReview){res.writeHead(409).end('Live is updating. Try again after it finishes.');return}
  let tmp;try{
   const original=fs.readFileSync(FEED,'utf8'),data=JSON.parse(original);if(!Array.isArray(data.contexts)||!Array.isArray(data.videos))throw Error();
   const matches=data.contexts.filter(c=>c&&c.id===x.id);if(matches.length>1)throw Error();const current=matches[0]||null;
-  if(JSON.stringify(current)!==JSON.stringify(x.expected)){res.writeHead(409).end('Stored project changed. Refresh and review before retrying.');return}
-  const updated={...(current||{id:x.id,note:''}),id:x.id,name:x.name.trim(),task:x.task.trim()};
-  data.contexts=current?data.contexts.map(c=>c.id===x.id?updated:c):[...data.contexts,updated];data.updatedAt=new Date().toISOString();
+  if(!current||JSON.stringify(current)!==JSON.stringify(x.expected)){res.writeHead(409).end('Stored project changed or was deleted. Refresh and review before retrying.');return}
+  const updated={...current,id:x.id,name:x.name.trim(),task:x.task.trim()};
+  data.contexts=data.contexts.map(c=>c.id===x.id?updated:c);data.updatedAt=new Date().toISOString();
   tmp=FEED+'.sync-'+crypto.randomUUID();fs.writeFileSync(tmp,JSON.stringify(data,null,2)+'\n',{mode:0o600});execFileSync('python3',[path.join(ROOT,'scripts','validate_feed.py'),tmp],{stdio:'ignore',timeout:5000});
   if(fs.readFileSync(FEED,'utf8')!==original){fs.unlinkSync(tmp);tmp=null;res.writeHead(409).end('Feed changed. Refresh and review before retrying.');return}
   fs.renameSync(tmp,FEED);tmp=null;notify('feed',{updatedAt:data.updatedAt,focusContext:data.focusContext});res.writeHead(200,{'Content-Type':'application/json'}).end('{}')
