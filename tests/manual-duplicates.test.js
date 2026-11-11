@@ -49,4 +49,10 @@ test('manual and live copies show once overall while remaining in their projects
   assert.match(grid(),/My manual title/);
   assert.match(grid(),/My own notes/);
   assert.equal(JSON.parse(saved).customVideos[0].reason,'My own notes','manual metadata must never be deleted');
+  feed={...seed,videos:[{...seed.videos[0],context:'manual',title:'Live title in same project'}]};
+  await source.listeners.feed();
+  assert.equal(cardCount(),1,'a collision within one project must also show one card');
+  assert.match(grid(),/My manual title/,'manual details take precedence for the same project');
+  assert.match(grid(),/My own notes/);
+  assert.equal(JSON.parse(saved).customVideos[0].reason,'My own notes','deduplication must not alter stored manual data');
 });
