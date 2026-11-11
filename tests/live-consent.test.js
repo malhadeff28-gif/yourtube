@@ -24,7 +24,10 @@ test('enabling Live requires an explicit review and confirmation', async()=>{
  click('live-toggle');status(true);assert.equal(el('live-consent').open,false,'external state change dismisses stale consent');submit();assert.equal(requests.length,0);
  status(false);click('live-toggle');source.onerror();submit();assert.equal(requests.length,0,'disconnect invalidates consent');
  status(false);click('live-toggle');submit();submit();await tick();assert.equal(requests.length,1);assert.equal(requests[0].url,'/api/live');assert.equal(requests[0].body.enabled,true);
+ source.listeners.status({data:JSON.stringify({mode:'listening',enabled:true,activityMayBeMissed:true,message:'Synthetic status'})});assert.equal(el('watcher-warning').hidden,false,'missed-activity warning must be visible');
+ source.listeners.status({data:JSON.stringify({mode:'curating',enabled:true,activityMayBeMissed:true,message:'Synthetic status'})});assert.equal(el('watcher-warning').hidden,false,'warning stays visible across other statuses');
  status(true);click('live-toggle');await tick();assert.equal(requests.length,2);assert.equal(requests[1].body.enabled,false,'pausing needs no confirmation');
+ status(false);assert.equal(el('watcher-warning').hidden,true,'paused status hides the warning');
  const html=fs.readFileSync(path.join(__dirname,'..','dist','index.html'),'utf8');
  assert.match(html,/Redaction can miss sensitive details; project IDs are sent unchanged/);
  assert.match(html,/Browser-only project edits are not included/);
@@ -36,6 +39,7 @@ test('enabling Live requires an explicit review and confirmation', async()=>{
  assert.match(consent,/Live may miss the first message in a newly discovered chat/);
  assert.match(consent,/including messages sent while paused, may be read after Live is enabled/);
  assert.match(info,/including text written while paused, to be read after Live is enabled/);
+ assert.match(html,/<p id="watcher-warning" role="status" hidden>Live may have missed some local chat activity/);
 });
 
 test('a hung enable request times out and a fresh status permits pause', async()=>{

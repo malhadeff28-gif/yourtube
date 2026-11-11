@@ -41,6 +41,13 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   fs.appendFileSync(session,JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'A synthetic message about studying a topic.'}]}})+'\n');
   let pending = await waitFor(async()=>{const s=await status();return s.mode==='awaiting-review'&&s});
   assert.equal(pending.pendingQuery,'original topic');
+  // A newly discovered chat can be baselined while a prior search awaits review.
+  // The warning must not replace or change the in-flight approval request.
+  fs.writeFileSync(path.join(sessions,'unseen.jsonl'),JSON.stringify({type:'session_meta',payload:{originator:'Codex Desktop',source:'vscode',thread_source:'user'}})+'\n'+JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'A synthetic newly discovered work message.'}]}})+'\n');
+  const warning = await waitFor(async()=>{const s=await status();return s.activityMayBeMissed&&s});
+  assert.equal(warning.mode,'awaiting-review');
+  assert.equal(warning.requestId,pending.requestId);
+  assert.equal(warning.pendingQuery,pending.pendingQuery);
   await delay(200);
   assert.equal(fs.readFileSync(marker,'utf8').trim().split('\n').length,1,'search must not start before review');
   const classification = JSON.parse(fs.readFileSync(marker,'utf8').trim()).input;
