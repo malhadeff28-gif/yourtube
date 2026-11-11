@@ -160,7 +160,7 @@ test('a failed video save can retry the same open draft',async()=>{
 });
 
 
-test('manual video associations are scoped to projects and hidden details require confirmation to replace',async()=>{
+test('manual video associations are scoped to projects and removed videos require explicit restoration',async()=>{
   const app=await setup({extraProject:true});app.allow();const {el}=app;
   const fill=(project,title,reason='')=>{el('add-video').listeners.click();el('video-url').value='https://youtu.be/abc123def45';el('video-context').value=project;el('video-title').value=title;el('video-reason').value=reason};
   fill('project','Duplicate');await el('video-form').listeners.submit(submit);
@@ -174,6 +174,7 @@ test('manual video associations are scoped to projects and hidden details requir
   fill('other','Replacement title','Replacement reason');app.setConfirm(false);await el('video-form').listeners.submit(submit);
   assert.equal(el('video-dialog').open,true);assert.equal(el('video-title').value,'Replacement title');assert.equal(app.saved().customVideos[0].reason,'My original reason');assert.deepEqual(app.saved().hiddenVideos,['abc123def45']);
   app.setConfirm(true);await el('video-form').listeners.submit(submit);
-  assert.equal(el('video-dialog').open,false);assert.equal(app.saved().customVideos.length,1);assert.equal(app.saved().customVideos[0].reason,'Replacement reason');assert.deepEqual(app.saved().hiddenVideos,[]);assert.match(el('grid').innerHTML,/Replacement title/);
+  assert.equal(el('video-dialog').open,true);assert.match(el('video-error').textContent,/Recently removed/i);assert.equal(app.saved().customVideos.length,1);assert.equal(app.saved().customVideos[0].reason,'My original reason');assert.deepEqual(app.saved().hiddenVideos,['abc123def45']);
+  el('video-dialog').close();el('show-removed').listeners.click();await el('removed-list').listeners.click({target:{closest:s=>s==='[data-restore-video]'?{dataset:{restoreVideo:'abc123def45'},disabled:false,setAttribute(){},removeAttribute(){}}:null}});assert.deepEqual(app.saved().hiddenVideos,[]);assert.match(el('grid').innerHTML,/My other project title/);
   el('context-nav').listeners.click(click('[data-context]','project'));assert.match(el('grid').innerHTML,/Existing video/);
 });
