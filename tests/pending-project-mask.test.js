@@ -8,7 +8,7 @@ const {setImmediate:tick}=require('node:timers/promises');
 const code=fs.readFileSync(path.join(__dirname,'../dist/app.js'),'utf8');
 const hidden='lostVid0001', other='okVideo0001', removedOther='hideVid0001';
 const marker={id:'a',token:'synthetic-token'};
-async function setup({pending=true,malformed=false,secondProject=true,hidePendingVideo=true,noLocks=false}={}){
+async function setup({pending=true,malformed=false,secondProject=true,hidePendingVideo=true,noLocks=false,holdEnable=false}={}){
  const elements=new Map(), listeners=new Map(),requests=[],writes=[];
  const dialogs=['context-dialog','context-choose-dialog','video-note-dialog','edit-video-dialog','copy-video-dialog','video-dialog','removed-dialog','project-export-dialog','manual-search-dialog','player-dialog','info-dialog','search-review','live-consent'];
  const el=id=>{if(!elements.has(id))elements.set(id,{id,value:'',textContent:'',innerHTML:'',open:false,disabled:false,hidden:false,checked:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn},showModal(){this.open=true},close(){this.open=false;this.listeners.close?.()},replaceChildren(){},reset(){},setAttribute(){},removeAttribute(){},querySelectorAll(){return []},contains(){return false},focus(){}});return elements.get(id)};
@@ -16,15 +16,15 @@ async function setup({pending=true,malformed=false,secondProject=true,hidePendin
  if(!hidePendingVideo){saved.hiddenVideos=saved.hiddenVideos.filter(id=>id!==hidden);saved.projectHiddenVideos=saved.projectHiddenVideos.filter(item=>item.context!=='a');saved.removedVideos=saved.removedVideos.filter(item=>item.id!==hidden)}
  if(pending)saved.__yourtubePendingDeletion=malformed?{id:7,token:'bad'}:marker;
  const storage=new Map([['yourtube.state.v1',JSON.stringify(saved)],['yourtube.thumbnails.v1','enabled']]);
- const localStorage={getItem:key=>storage.has(key)?storage.get(key):null,setItem:(key,value)=>{writes.push([key,value]);storage.set(key,value)}};
+ let failReads=false,resolveEnable;const localStorage={getItem:key=>{if(failReads&&key==='yourtube.state.v1')throw Error('synthetic read failure');return storage.has(key)?storage.get(key):null},setItem:(key,value)=>{writes.push([key,value]);storage.set(key,value)}};
  const feed={contexts:[{id:'a',name:'Recreated secret project',task:'Recreated secret task'},...(secondProject?[{id:'b',name:'Visible project',task:'Visible task'}]:[])],videos:[{id:hidden,context:'a',title:'Recreated private video',channel:'Secret channel',reason:'Secret reason',source:'Live'},...(secondProject?[{id:other,context:'b',title:'Visible video',channel:'Visible channel',reason:'Visible reason',source:'Live'},{id:removedOther,context:'b',title:'Other removed video',channel:'Visible channel',reason:'Visible',source:'Live'}]:[])],focusContext:'a',contextSource:'Private source'};
  let events;class Events{constructor(){events=this;this.listeners={}}addEvent(name,fn){this.listeners[name]=fn}addEventListener(name,fn){this.listeners[name]=fn}close(){}}
  el('pending-drafts').hidden=true;
  const document={getElementById:el,querySelector:s=>s==='dialog[open]'?dialogs.map(el).find(d=>d.open)||null:null,querySelectorAll:s=>s==='dialog'?dialogs.map(el):[],createElement:()=>el('new')};
  const window={addEventListener:(name,fn)=>{const all=listeners.get(name)||[];all.push(fn);listeners.set(name,all)}};
- const context={window,document,localStorage,navigator:{locks:noLocks?undefined:{request:async(_key,_options,fn)=>fn({})}},EventSource:Events,fetch:async(url,options)=>{requests.push({url,method:options?.method||'GET',body:options?.body});return {ok:true,json:async()=>feed}},setTimeout,clearTimeout,AbortController,URL,console,crypto:{randomUUID:()=> 'new'},confirm:()=>true};
+ const context={window,document,localStorage,navigator:{locks:noLocks?undefined:{request:async(_key,_options,fn)=>fn({})}},EventSource:Events,fetch:async(url,options)=>{requests.push({url,method:options?.method||'GET',body:options?.body});if(holdEnable&&url==='/api/live'&&JSON.parse(options.body).enabled)return new Promise(resolve=>{resolveEnable=()=>resolve({ok:true})});return {ok:true,json:async()=>feed}},setTimeout,clearTimeout,AbortController,URL,console,crypto:{randomUUID:()=> 'new'},confirm:()=>true};
  vm.runInNewContext(code,context);await tick();
- return {el,feed,requests,writes,storage,saved,emitStorage:(event={key:'yourtube.state.v1'})=>{for(const fn of listeners.get('storage')||[])fn(event)},refresh:async()=>{events.listeners.feed();await tick()},status:data=>events.listeners.status({data:JSON.stringify(data)}),click:(selector,dataset)=>({target:{closest:s=>s===selector?{dataset,disabled:false,setAttribute(){},removeAttribute(){}}:null}})};
+ return {el,feed,requests,writes,storage,saved,failReads:()=>{failReads=true},resolveEnable:()=>resolveEnable(),emitStorage:(event={key:'yourtube.state.v1'})=>{for(const fn of listeners.get('storage')||[])fn(event)},refresh:async()=>{events.listeners.feed();await tick()},status:data=>events.listeners.status({data:JSON.stringify(data)}),click:(selector,dataset)=>({target:{closest:s=>s===selector?{dataset,disabled:false,setAttribute(){},removeAttribute(){}}:null}})};
 }
 
 test('unresolved project is hidden before overlays, notes, removals or thumbnails render',async()=>{
@@ -92,4 +92,36 @@ test('cross-tab storage clear and transient malformed marker fail closed',async(
 test('unavailable Web Locks alone does not falsely claim Live review is blocked',async()=>{
  const a=await setup({pending:false,hidePendingVideo:false,noLocks:true});assert.match(a.el('storage-warning').textContent,/Editing is disabled/i);assert.doesNotMatch(a.el('storage-warning').textContent,/Live review.*unavailable/i);assert.match(a.el('context-nav').innerHTML,/Old private project/);
  a.status({enabled:true,mode:'awaiting-review',message:'Review',requestId:'synthetic',pendingQuery:'General example',pendingProject:{id:'a',name:'A',task:'Task'},projectOptions:[{id:'a',name:'A',task:'Task'}]});assert.equal(a.el('search-review').open,true);assert.equal(a.el('live-label').textContent,'Review search');
+});
+
+
+test('unresolved or malformed browser state blocks enabling Live but still permits pause',async()=>{
+ for(const options of [{pending:true},{pending:true,malformed:true}]){
+  const a=await setup(options);a.status({enabled:false,mode:'paused',message:'Paused'});a.el('live-toggle').listeners.click();assert.equal(a.el('live-consent').open,false);
+  a.el('live-consent').open=true;a.el('live-consent-form').listeners.submit({preventDefault(){}});await tick();assert.equal(a.requests.filter(r=>r.url==='/api/live').length,0);
+  a.status({enabled:true,mode:'listening',message:'Live'});a.el('live-toggle').listeners.click();await tick();const posts=a.requests.filter(r=>r.url==='/api/live');assert.equal(posts.length,1);assert.equal(JSON.parse(posts[0].body).enabled,false);
+ }
+});
+
+test('an unresolved marker closes an open consent and an undelivered event still blocks enable',async()=>{
+ for(const deliver of [true,false]){
+  const a=await setup({pending:false});a.status({enabled:false,mode:'paused',message:'Paused'});a.el('live-toggle').listeners.click();assert.equal(a.el('live-consent').open,true);
+  const state=JSON.parse(a.storage.get('yourtube.state.v1'));state.__yourtubePendingDeletion=marker;a.storage.set('yourtube.state.v1',JSON.stringify(state));if(deliver){a.emitStorage();assert.equal(a.el('live-consent').open,false)}
+  a.el('live-consent-form').listeners.submit({preventDefault(){}});await tick();assert.equal(a.requests.filter(r=>r.url==='/api/live').length,0);assert.match(a.el('storage-warning').textContent,/unresolved/i);assert.equal(a.el('live-consent').open,false);assert.equal(a.writes.length,0);
+ }
+});
+
+test('changed or unreadable storage blocks enable without falsely requiring Web Locks',async()=>{
+ for(const mode of ['changed','unreadable']){
+  const a=await setup({pending:false,noLocks:true});a.status({enabled:false,mode:'paused',message:'Paused'});a.el('live-toggle').listeners.click();assert.equal(a.el('live-consent').open,true);
+  if(mode==='changed')a.storage.set('yourtube.state.v1',JSON.stringify({...a.saved,saved:['newVideo001']}));else a.failReads();
+  a.el('live-consent-form').listeners.submit({preventDefault(){}});await tick();assert.equal(a.requests.filter(r=>r.url==='/api/live').length,0);assert.equal(a.el('live-consent').open,false);
+ }
+ const a=await setup({pending:false,noLocks:true});a.status({enabled:false,mode:'paused',message:'Paused'});a.el('live-toggle').listeners.click();a.el('live-consent-form').listeners.submit({preventDefault(){}});await tick();assert.equal(JSON.parse(a.requests.find(r=>r.url==='/api/live').body).enabled,true);
+});
+
+test('a marker during an in-flight enable does not imply cancellation and allows pause after reconnect',async()=>{
+ const a=await setup({pending:false,holdEnable:true});a.status({enabled:false,mode:'paused',message:'Paused'});a.el('live-toggle').listeners.click();a.el('live-consent-form').listeners.submit({preventDefault(){}});assert.equal(a.requests.filter(r=>r.url==='/api/live').length,1);
+ const state=JSON.parse(a.storage.get('yourtube.state.v1'));state.__yourtubePendingDeletion=marker;a.storage.set('yourtube.state.v1',JSON.stringify(state));a.emitStorage();assert.match(a.el('storage-warning').textContent,/Live may still be on/i);a.el('live-toggle').listeners.click();assert.equal(a.requests.filter(r=>r.url==='/api/live').length,1);
+ a.resolveEnable();await tick();a.status({enabled:true,mode:'listening',message:'Live'});a.el('live-toggle').listeners.click();await tick();const posts=a.requests.filter(r=>r.url==='/api/live');assert.equal(posts.length,2);assert.equal(JSON.parse(posts[1].body).enabled,false);
 });
