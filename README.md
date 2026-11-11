@@ -10,6 +10,8 @@ The idea: turn the context in an ongoing work session into a useful starting poi
 2. A Codex invocation reads a short chat excerpt and the local feed’s stored project IDs, names, and tasks to identify a general work or study topic. The excerpt, names, and tasks receive best-effort redaction; IDs do not. Review the proposed project assignment and details, and review, edit, or cancel the search phrase before a separate search-enabled Codex invocation receives it. If verified videos are found, the approved project name and task replace the selected stored project’s details; selecting a new project creates one. That invocation may send the phrase or queries derived from it to search providers.
 3. The service checks video IDs against YouTube's public oEmbed endpoint, then updates a local feed. You can edit project context, add videos, save videos for later, mark videos watched, and pause live reading.
 
+While Live is enabled, YourTube normally waits for 12 seconds of quiet before processing queued chat activity. Continuous activity no longer postpones a pending batch indefinitely: after 60 seconds the batch becomes eligible, although an already-running job must finish first. This can trigger Codex processing during sustained activity and consume your account allowance. Queue limits and other watcher limitations still apply; this does not guarantee message delivery or recommendation quality.
+
 This prototype is local software, not a hosted product or a YouTube integration. It depends on an installed, signed-in Codex CLI, web search, YouTube, and the current local Codex Desktop chat format. Those integrations may change. Video metadata verification does not verify the content or its relevance.
 
 ## Run locally
