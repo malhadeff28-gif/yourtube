@@ -20,7 +20,7 @@ const READ_CHUNK_BYTES=512*1024, MAX_RECORD_BYTES=1024*1024;
 // Only surface a coarse warning; never include file names or activity contents.
 function markActivityMayBeMissed(){if(enabled&&!state.activityMayBeMissed)setState(state.mode,state.message,{activityMayBeMissed:true})}
 function mayContainDesktopActivity(fd,size){if(allowed(fd)!==true)return false;const buf=Buffer.alloc(Math.min(size,262144)),got=fs.readSync(fd,buf,0,buf.length,0),end=buf.subarray(0,got).indexOf(10);return end>=0&&end+1<size}
-function clearFileHistory(file){recent.delete(file);if(expiry.has(file)){clearTimeout(expiry.get(file));expiry.delete(file)}queue=queue.filter(x=>x.file!==file)}
+function clearFileHistory(file){recent.delete(file);if(expiry.has(file)){clearTimeout(expiry.get(file));expiry.delete(file)}const before=queue.length;queue=queue.filter(x=>x.file!==file);if(queue.length<before)markActivityMayBeMissed()}
 function readNew(file){try{
   const fd=fs.openSync(file,'r');try{
   const before=fs.fstatSync(fd,{bigint:true}),stat={size:Number(before.size),dev:String(before.dev),ino:String(before.ino)};let e=entries.get(file);
