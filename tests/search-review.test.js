@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
+const net = require('node:net');
 const { spawn } = require('node:child_process');
 const { setTimeout: delay } = require('node:timers/promises');
 
@@ -55,6 +56,16 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   assert.match(classification, /Study \[link\] \[credential\]/);
   assert.match(classification, /"id":"example"/);
   assert.doesNotMatch(classification, /contact@example\.com|example\.com\/private|synthetic-secret/);
+  const client=net.connect(port,'127.0.0.1');
+  await new Promise((resolve,reject)=>{client.once('connect',resolve);client.once('error',reject)});
+  const partial=JSON.stringify({requestId:pending.requestId,action:'approve',query:'unapproved phrase'}).slice(0,-1);
+  client.write(`POST /api/search-review HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nOrigin: ${base}\r\nContent-Type: application/json\r\nContent-Length: 200\r\n\r\n${partial}`);
+  await delay(100);client.destroy();await delay(100);
+  const afterAbort=await status();
+  assert.equal(afterAbort.mode,'awaiting-review','an aborted approval must leave the review pending');
+  assert.equal(afterAbort.requestId,pending.requestId);
+  assert.equal(afterAbort.pendingQuery,pending.pendingQuery);
+  assert.equal(fs.readFileSync(marker,'utf8').trim().split('\n').length,1,'an aborted approval must not start a search');
   fs.appendFileSync(session,JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'A second synthetic message while the search is awaiting review.'}]}})+'\n');
   await delay(250);
   const stillPending = await status();
