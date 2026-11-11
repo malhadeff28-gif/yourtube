@@ -9,13 +9,13 @@ const { setImmediate: tick } = require('node:timers/promises');
 async function setup() {
   const elements = new Map();
   function el(id){if(!elements.has(id))elements.set(id,{id,disabled:false,value:'',textContent:'',innerHTML:'',open:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(k,f){this.listeners[k]=f},showModal(){this.open=true},close(){this.open=false;this.listeners.close?.()},replaceChildren(){},reset(){}});return elements.get(id)}
-  let state=JSON.stringify({customVideos:[],customContexts:[],contextEdits:{},deletedContexts:[],hiddenVideos:[],saved:[]}), fail=true, deleteFail=false, refreshFail=false, initialLoaded=false, deletionGate=null;
+  let state=JSON.stringify({customVideos:[],customContexts:[],contextEdits:{},deletedContexts:[],hiddenVideos:[],saved:[]}), fail=true, deleteFail=false, refreshFail=false, initialLoaded=false, deletionGate=null, deleteCount=0;
   let feed={contexts:[{id:'project',name:'Project',task:'Task'}],videos:[{id:'abc123def45',context:'project',title:'Existing video',channel:'Sample',reason:'Example',source:'Fixture'}],focusContext:'project',contextSource:'Fixture'};
   class FakeEvents{constructor(){this.listeners={}}addEventListener(k,f){this.listeners[k]=f}close(){}}
   const dialogIds=['context-dialog','video-dialog','player-dialog','info-dialog','live-consent','search-review'];
-  const context={window:{},document:{getElementById:el,querySelector:selector=>selector==='dialog[open]'?dialogIds.map(el).find(d=>d.open)||null:null,querySelectorAll:selector=>selector==='dialog'?dialogIds.map(el):[],createElement:()=>el('created')},localStorage:{getItem:()=>state,setItem:(_k,v)=>{if(fail)throw Error('quota exceeded');state=v}},EventSource:FakeEvents,fetch:async(url)=>{if(url==='/api/context/delete'){if(deletionGate)await deletionGate;if(deleteFail)return {ok:false};feed={...feed,contexts:[],videos:[]};return {ok:true}}if(refreshFail&&initialLoaded)return {ok:false};initialLoaded=true;return {ok:true,json:async()=>feed}},setTimeout,clearTimeout,AbortController,URL,console,crypto:{randomUUID:()=> 'new-project'},confirm:()=>true};
+  const context={window:{},document:{getElementById:el,querySelector:selector=>selector==='dialog[open]'?dialogIds.map(el).find(d=>d.open)||null:null,querySelectorAll:selector=>selector==='dialog'?dialogIds.map(el):[],createElement:()=>el('created')},localStorage:{getItem:()=>state,setItem:(_k,v)=>{if(fail)throw Error('quota exceeded');state=v}},EventSource:FakeEvents,fetch:async(url)=>{if(url==='/api/context/delete'){deleteCount++;if(deletionGate)await deletionGate;if(deleteFail)return {ok:false};feed={...feed,contexts:[],videos:[]};return {ok:true}}if(refreshFail&&initialLoaded)return {ok:false};initialLoaded=true;return {ok:true,json:async()=>feed}},setTimeout,clearTimeout,AbortController,URL,console,crypto:{randomUUID:()=> 'new-project'},confirm:()=>true};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),context);await tick();
-  return {el,saved:()=>JSON.parse(state),allow:()=>{fail=false},failDelete:()=>{deleteFail=true},failRefresh:()=>{refreshFail=true},holdDeletion:()=>{let release;deletionGate=new Promise(resolve=>{release=resolve});return release}};
+  return {el,saved:()=>JSON.parse(state),deleteCalls:()=>deleteCount,allow:()=>{fail=false},failDelete:()=>{deleteFail=true},failRefresh:()=>{refreshFail=true},holdDeletion:()=>{let release;deletionGate=new Promise(resolve=>{release=resolve});return release}};
 }
 const submit={preventDefault(){}};
 const click=(selector,id)=>({target:{closest:s=>s===selector?{dataset:{[selector.slice(6,-1)]:id}}:null}});
@@ -90,5 +90,24 @@ test('a late deletion result preserves a reopened project or video dialog',async
     assert.equal(dialog.open,true,'the newer dialog must stay open');
     assert.equal(app.el(kind==='same-project'?'context-name':'video-title').value,kind==='same-project'?'Reopened draft':'Video draft');
     dialog.close();assert.match(app.el('toast').textContent,/project.*deleted/i);
+  }
+});
+
+test('same-project drafts cannot be falsely saved during or after deletion',async()=>{
+  for(const mode of ['success','partial','uncertain']){
+    const app=await setup();if(mode!=='partial')app.allow();const release=app.holdDeletion();app.el('edit-context').listeners.click();
+    const pending=app.el('delete-context').listeners.click();app.el('context-dialog').close();app.el('edit-context').listeners.click();
+    app.el('context-name').value='Reopened draft';app.el('context-task').value='Still editing';
+    app.el('context-form').listeners.submit(submit);
+    assert.match(app.el('context-error').textContent,/deletion.*progress/i);assert.equal(app.el('context-dialog').open,true);
+    app.el('delete-context').listeners.click();assert.equal(app.deleteCalls(),1,'the same project must not send duplicate deletes');
+    if(mode==='uncertain')app.failDelete();release();await pending;
+    assert.match(app.el('context-error').textContent,mode==='uncertain'?/could not confirm/i:/deleted/i);
+    if(mode==='partial')assert.match(app.el('context-error').textContent,/browser changes could not be saved/i);
+    assert.equal(app.el('context-dialog').open,true);assert.equal(app.el('context-name').value,'Reopened draft');
+    app.el('context-form').listeners.submit(submit);
+    assert.equal(app.el('context-dialog').open,true,'unsafe save must leave draft open');
+    assert.match(app.el('context-error').textContent,mode==='uncertain'?/could not confirm/i:/deleted/i);
+    assert.doesNotMatch(app.el('toast').textContent,/context saved/i);
   }
 });
