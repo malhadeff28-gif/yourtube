@@ -48,9 +48,16 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<'
 function contexts(){ return [...window.SEED.contexts.map(c=>({...c,...state.contextEdits[c.id]})),...state.customContexts].filter(c=>!state.deletedContexts.includes(c.id)); }
 // Prefer a user's manual details where the same video has multiple records.
 // Keep separate project associations so each project's filter remains useful.
-function collapseVideos(items,key){const manual=new Set(state.customVideos),result=[],positions=new Map();for(const video of items){const k=key(video);if(!positions.has(k)){positions.set(k,result.length);result.push(video)}else if(manual.has(video)&&!manual.has(result[positions.get(k)]))result[positions.get(k)]=video}return result}
+function collapseVideos(items,key,rank=()=>0){const manual=new Set(state.customVideos),result=[],positions=new Map();for(const video of items){const k=key(video);if(!positions.has(k)){positions.set(k,result.length);result.push(video)}else{const current=result[positions.get(k)],difference=rank(video)-rank(current);if(difference>0||(difference===0&&manual.has(video)&&!manual.has(current)))result[positions.get(k)]=video}}return result}
 function videos(){ const valid = new Set(contexts().map(c=>c.id)); return collapseVideos([...window.SEED.videos,...state.customVideos].filter(v=>valid.has(v.context)&&!state.hiddenVideos.includes(v.id)&&!state.projectHiddenVideos.some(x=>x.id===v.id&&x.context===v.context)),v=>JSON.stringify([v.id,v.context])); }
-function visibleVideos(all=videos()){const q=$('search').value.trim().toLowerCase();return collapseVideos(all.filter(v=>(active==='all'||v.context===active)&&(view!=='saved'||state.saved.includes(v.id))&&(view!=='watched'||state.watched.includes(v.id))&&[v.title,v.channel,v.reason].some(s=>String(s||'').toLowerCase().includes(q))),v=>v.id)}
+function visibleVideos(all=videos()){
+ const q=$('search').value.trim().toLowerCase();
+ // Match and prefer a note's project before collapsing shared videos, even if
+ // another project has manually entered metadata that also matches the query.
+ const notes=q?new Map(state.videoNotes.map(n=>[JSON.stringify([n.id,n.context]),n.text.toLowerCase()])):null;
+ const noteMatches=v=>Boolean(q&&(notes.get(JSON.stringify([v.id,v.context]))||'').includes(q));
+ return collapseVideos(all.filter(v=>(active==='all'||v.context===active)&&(view!=='saved'||state.saved.includes(v.id))&&(view!=='watched'||state.watched.includes(v.id))&&(!q||[v.title,v.channel,v.reason].some(s=>String(s||'').toLowerCase().includes(q))||noteMatches(v))),v=>v.id,v=>Number(noteMatches(v)));
+}
 const conflictMessage='YourTube browser data changed or cannot be safely accessed. Copy any drafts and reload before editing.';
 // All updated tabs serialize writes with Web Locks. This cannot coordinate older
 // app versions or unrelated scripts that do not use the same lock.
