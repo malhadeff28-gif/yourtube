@@ -7,7 +7,7 @@ const BASE=process.env.YOURTUBE_SESSIONS_DIR || path.join(os.homedir(),'.codex',
 const FEED=process.env.YOURTUBE_FEED || path.join(DIST,'feed.json'),PORT=Number(process.env.YOURTUBE_PORT||8765),HOST='127.0.0.1';
 const DEBOUNCE=Number(process.env.YOURTUBE_DEBOUNCE_MS||12000);
 let clients=new Set(), entries=new Map(), queue=[], recent=new Map(), expiry=new Map(), timer=null, working=false, enabled=false, watcher=null, runId=0;
-let state={mode:'starting',message:'Starting live chat connection',lastUpdate:null,lastSearch:null};
+let state={mode:'starting',message:'Starting live chat connection',lastUpdate:null,lastSearch:null,activityMayBeMissed:false};
 function notify(type,value){const body=`event: ${type}\ndata: ${JSON.stringify(value)}\n\n`;for(const r of clients)r.write(body)}
 function setState(mode,message,more={}){state={...state,mode,message,...more,enabled,watcherReady:Boolean(watcher)};notify('status',state)}
 function walk(dir){for(const d of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,d.name);if(d.isDirectory())walk(p);else if(d.isFile()&&p.endsWith('.jsonl')){const stat=fs.statSync(p,{bigint:true});entries.set(p,{offset:Number(stat.size),dev:String(stat.dev),ino:String(stat.ino),pending:'',allowed:null})}}}
@@ -16,6 +16,9 @@ function redact(s){return s.replace(/https?:\/\/\S+/gi,'[link]').replace(/[\w.+-
 // Read bounded chunks without depending on another fs.watch notification. Keep only
 // complete UTF-8 JSONL records and skip oversized records through their newline.
 const READ_CHUNK_BYTES=512*1024, MAX_RECORD_BYTES=1024*1024;
+// Only surface a coarse warning; never include file names or activity contents.
+function markActivityMayBeMissed(){if(enabled&&!state.activityMayBeMissed)setState(state.mode,state.message,{activityMayBeMissed:true})}
+function mayContainDesktopActivity(fd,size){if(allowed(fd)!==true)return false;const buf=Buffer.alloc(Math.min(size,262144)),got=fs.readSync(fd,buf,0,buf.length,0),end=buf.subarray(0,got).indexOf(10);return end>=0&&end+1<size}
 function clearFileHistory(file){recent.delete(file);if(expiry.has(file)){clearTimeout(expiry.get(file));expiry.delete(file)}queue=queue.filter(x=>x.file!==file)}
 function readNew(file){try{
   const fd=fs.openSync(file,'r');try{
@@ -23,11 +26,11 @@ function readNew(file){try{
   if(!e){
     // The file may have been created while paused or during the enable scan.
     // Establish a baseline instead of replaying bytes of unknown age.
-    e={offset:stat.size,dev:stat.dev,ino:stat.ino,pending:Buffer.alloc(0),allowed:null};entries.set(file,e);return
+    e={offset:stat.size,dev:stat.dev,ino:stat.ino,pending:Buffer.alloc(0),allowed:null};entries.set(file,e);if(enabled&&mayContainDesktopActivity(fd,stat.size))markActivityMayBeMissed();return
   }
   if(e.dev!==stat.dev||e.ino!==stat.ino||stat.size<e.offset){
     // Replacements and truncations can contain old records, so baseline them.
-    e.offset=stat.size;e.dev=stat.dev;e.ino=stat.ino;e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=null;clearFileHistory(file);return
+    if(enabled&&mayContainDesktopActivity(fd,stat.size))markActivityMayBeMissed();e.offset=stat.size;e.dev=stat.dev;e.ino=stat.ino;e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=null;clearFileHistory(file);return
   }
   if(stat.size===e.offset)return;
   if(!enabled){e.offset=stat.size;e.pending=Buffer.alloc(0);e.discarding=false;return}
@@ -43,7 +46,7 @@ function readNew(file){try{
   if(stillPermitted!==true||!current||before.dev!==after.dev||before.ino!==after.ino||before.size!==after.size||before.mtimeNs!==after.mtimeNs||before.ctimeNs!==after.ctimeNs||current.dev!==after.dev||current.ino!==after.ino||current.size!==after.size||current.mtimeNs!==after.mtimeNs||current.ctimeNs!==after.ctimeNs){
     // A concurrent write, rewrite, or pathname swap makes the captured bytes uncertain.
     // Skip them; a later event can establish a fresh safe baseline.
-    const latest=current||after;e.offset=Number(latest.size);e.dev=String(latest.dev);e.ino=String(latest.ino);e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=null;clearFileHistory(file);return
+    markActivityMayBeMissed();const latest=current||after;e.offset=Number(latest.size);e.dev=String(latest.dev);e.ino=String(latest.ino);e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=null;clearFileHistory(file);return
   }
   e.allowed=true;e.offset+=got;
   if(!Buffer.isBuffer(e.pending))e.pending=Buffer.alloc(0);
@@ -51,7 +54,7 @@ function readNew(file){try{
     const end=buf.indexOf(10,pos),complete=end!==-1&&end<got,stop=complete?end:got;
     if(!e.discarding){
       const length=e.pending.length+stop-pos;
-      if(length>MAX_RECORD_BYTES){e.pending=Buffer.alloc(0);e.discarding=!complete}
+      if(length>MAX_RECORD_BYTES){markActivityMayBeMissed();e.pending=Buffer.alloc(0);e.discarding=!complete}
       else{
         e.pending=Buffer.concat([e.pending,buf.subarray(pos,stop)],length);
         if(complete){consumeLine(file,e.pending.toString('utf8'));e.pending=Buffer.alloc(0)}
@@ -98,7 +101,7 @@ function setEnabled(value){
       // Any incomplete baseline is unsafe. Revert before queued callbacks run.
       enabled=false;entries.clear();setState('error','Cannot safely snapshot local Codex chats. Check access and select Retry.');return
     }
-    runId++;setState('listening','Listening for new local Codex chat messages.');return
+    runId++;setState('listening','Listening for new local Codex chat messages.',{activityMayBeMissed:false});return
   }
   enabled=false;runId++;
   if(pendingReview)finishReview(pendingReview.id,null);
@@ -106,7 +109,7 @@ function setEnabled(value){
   for(const e of entries.values()){e.pending=Buffer.alloc(0);e.discarding=false}
   for(const t of expiry.values())clearTimeout(t);expiry.clear();
   if(controller.child)controller.child.kill('SIGTERM');
-  setState('paused','Live chat reading is paused.')
+  setState('paused','Live chat reading is paused.',{activityMayBeMissed:false})
 }
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8'};
 const server=http.createServer(async(req,res)=>{let u;try{u=new URL(req.url,`http://${HOST}:${PORT}`)}catch{res.writeHead(400).end('Bad request');return}if(req.headers.host!==`${HOST}:${PORT}`){res.writeHead(403).end();return}if(u.pathname==='/events'&&req.method==='GET'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});clients.add(res);res.write(`event: status\ndata: ${JSON.stringify(state)}\n\n`);req.on('close',()=>clients.delete(res));return}if(u.pathname==='/api/search-review'&&req.method==='POST'){if(req.headers.origin!==`http://${HOST}:${PORT}`||req.headers['content-type']!=='application/json'){res.writeHead(403).end();return}let body='';for await(const chunk of req){body+=chunk;if(body.length>1024){res.writeHead(413).end();return}}try{const x=JSON.parse(body);if(!pendingReview||x.requestId!==pendingReview.id||!['approve','cancel'].includes(x.action))throw Error();const query=x.action==='approve'&&typeof x.query==='string'?x.query.trim():null;if(x.action==='approve'&&!safeQuery(query))throw Error();finishReview(x.requestId,query);res.writeHead(200,{'Content-Type':'application/json'}).end('{}')}catch{res.writeHead(400).end()}return}if(u.pathname==='/api/context/delete'&&req.method==='POST'){if(req.headers.origin!==`http://${HOST}:${PORT}`||req.headers['content-type']!=='application/json'){res.writeHead(403).end();return}let body='';for await(const chunk of req){body+=chunk;if(body.length>256){res.writeHead(413).end();return}}try{const x=JSON.parse(body);if(typeof x.id!=='string'||! /^[A-Za-z0-9_-]{1,80}$/.test(x.id))throw Error();if(pendingReview)finishReview(pendingReview.id,null);runId++;queue=[];recent.clear();for(const t of expiry.values())clearTimeout(t);expiry.clear();if(timer)clearTimeout(timer);timer=null;if(controller.child)controller.child.kill('SIGTERM');const data=JSON.parse(fs.readFileSync(FEED,'utf8'));data.contexts=data.contexts.filter(c=>c.id!==x.id);data.videos=data.videos.filter(v=>v.context!==x.id);if(data.focusContext===x.id)data.focusContext=data.contexts[0]?.id||'';data.updatedAt=new Date().toISOString();const tmp=FEED+'.delete-'+crypto.randomUUID();fs.writeFileSync(tmp,JSON.stringify(data,null,2)+'\n',{mode:0o600});fs.renameSync(tmp,FEED);notify('feed',{updatedAt:data.updatedAt,focusContext:data.focusContext});setState(enabled?'listening':'paused',enabled?'Project deleted. Listening for new chats.':'Live chat reading is paused.');res.writeHead(200,{'Content-Type':'application/json'}).end('{}')}catch{res.writeHead(400).end()}return}if(u.pathname==='/api/live'&&req.method==='POST'){if(req.headers.origin!==`http://${HOST}:${PORT}`||req.headers['content-type']!=='application/json'){res.writeHead(403).end();return}let body='';for await(const chunk of req){body+=chunk;if(body.length>256){res.writeHead(413).end();return}}try{const x=JSON.parse(body);if(typeof x.enabled!=='boolean'||('expectedEnabled' in x&&typeof x.expectedEnabled!=='boolean'))throw Error();if('expectedEnabled' in x&&x.expectedEnabled!==enabled){res.writeHead(409,{'Content-Type':'application/json'}).end(JSON.stringify(state));return}setEnabled(x.enabled);res.writeHead(200,{'Content-Type':'application/json'}).end(JSON.stringify(state))}catch{res.writeHead(400).end()}return}if(req.method!=='GET'){res.writeHead(405).end();return}let name;try{name=u.pathname==='/'?'index.html':decodeURIComponent(u.pathname).replace(/^\/+/, '')}catch{res.writeHead(400).end('Bad request');return}const file=path.resolve(DIST,name);if(!file.startsWith(DIST+path.sep)){res.writeHead(403).end();return}try{const data=await fsp.readFile(name==='feed.json'?FEED:file);res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(data)}catch{res.writeHead(404).end('Not found')}});
