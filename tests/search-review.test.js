@@ -17,6 +17,9 @@ test('search waits for a valid user-approved phrase', { timeout: 12000 }, async 
   const feed = path.join(dir, 'feed.json');
   fs.writeFileSync(feed, JSON.stringify({contexts:[{id:'example',name:'Photography contact@example.com',task:'Study https://example.com/private token=synthetic-secret'}],videos:[],focusContext:'example'}));
   const marker = path.join(dir, 'calls');
+  const failRename = path.join(dir, 'fail-rename');
+  const renameHook = path.join(dir, 'rename-hook.cjs');
+  fs.writeFileSync(renameHook, `const fs=require('node:fs'),rename=fs.renameSync;fs.renameSync=function(from,to){if(to===process.env.TEST_FEED&&fs.existsSync(process.env.TEST_FAIL_RENAME)){const e=Error('synthetic rename failure');e.code='EACCES';throw e}return rename.apply(this,arguments)};`);
   const fake = path.join(dir, 'fake-codex');
   fs.writeFileSync(fake, `#!/usr/bin/env node
 const fs=require('node:fs'); let input='';
@@ -32,6 +35,7 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
     ...process.env, YOURTUBE_PORT: String(port), YOURTUBE_SESSIONS_DIR: sessions,
     YOURTUBE_FEED: feed, YOURTUBE_SETTINGS: path.join(dir, 'settings.json'),
     YOURTUBE_CODEX: fake, YOURTUBE_DEBOUNCE_MS: '40', TEST_MARKER: marker,
+    TEST_FEED: feed, TEST_FAIL_RENAME: failRename, NODE_OPTIONS:`${process.env.NODE_OPTIONS||''} --require=${JSON.stringify(renameHook)}`,
   }, stdio: 'ignore' });
   t.after(async () => { if(child.exitCode===null){const done=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true}) });
   async function waitFor(fn) { for(let i=0;i<200;i++){const value=await fn();if(value)return value;await delay(25)}throw Error('timed out') }
@@ -49,6 +53,25 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   assert.equal(warning.mode,'awaiting-review');
   assert.equal(warning.requestId,pending.requestId);
   assert.equal(warning.pendingQuery,pending.pendingQuery);
+  // A browser-only project has no server-feed ID; deleting it must not cancel unrelated work.
+  const unchangedFeed = fs.readFileSync(feed, 'utf8');
+  assert.equal((await post('/api/context/delete',{id:'browser-only-project'})).status,200);
+  assert.equal(fs.readFileSync(feed,'utf8'), unchangedFeed, 'a no-op delete must not rewrite the feed');
+  const afterRetry = await status();
+  assert.equal(afterRetry.mode,'awaiting-review');
+  assert.equal(afterRetry.requestId,pending.requestId);
+  assert.equal(afterRetry.pendingQuery,pending.pendingQuery);
+  // If the feed cannot be read safely, deletion must fail before canceling work.
+  fs.writeFileSync(feed, '{invalid synthetic feed');
+  assert.equal((await post('/api/context/delete',{id:'example'})).status,400);
+  fs.writeFileSync(feed, unchangedFeed);
+  assert.equal((await status()).requestId,pending.requestId);
+  fs.writeFileSync(failRename, 'fail');
+  assert.equal((await post('/api/context/delete',{id:'example'})).status,400);
+  assert.equal((await status()).requestId,pending.requestId,'a failed delete write must not cancel active review');
+  assert.equal(fs.readFileSync(feed,'utf8'),unchangedFeed);
+  assert.equal(fs.readdirSync(dir).some(name=>name.startsWith('feed.json.delete-')),false,'failed delete must remove its temporary file');
+  fs.unlinkSync(failRename);
   await delay(200);
   assert.equal(fs.readFileSync(marker,'utf8').trim().split('\n').length,1,'search must not start before review');
   const classification = JSON.parse(fs.readFileSync(marker,'utf8').trim()).input;
@@ -71,6 +94,8 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   const stillPending = await status();
   assert.equal(stillPending.mode,'awaiting-review','new chat activity must not hide the pending review');
   assert.equal(stillPending.requestId,pending.requestId);
+  assert.equal((await post('/api/context/delete',{id:'already-deleted'})).status,200);
+  assert.equal((await status()).requestId,pending.requestId,'retry must not cancel an active review or its queued follow-up');
   await post('/api/live',{enabled:true});
   assert.equal((await status()).requestId,pending.requestId,'a repeated enable must not cancel or hide the review');
   assert.equal((await status()).mode,'awaiting-review');
@@ -101,4 +126,11 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   assert.equal((await post('/api/search-review',{requestId:second.requestId,action:'approve',query:'too late'})).status,400);
   await delay(100);
   assert.equal(fs.readFileSync(marker,'utf8').trim().split('\n').length,3,'paused review must not start a search');
+  await post('/api/live',{enabled:true});
+  fs.appendFileSync(session,JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'One more synthetic work message to review before deleting the project.'}]}})+'\n');
+  const third = await waitFor(async()=>{const s=await status();return s.mode==='awaiting-review'&&s});
+  assert.equal((await post('/api/context/delete',{id:'example'})).status,200);
+  assert.equal((await status()).mode,'listening','a real deletion must still cancel ongoing review');
+  assert.equal((await post('/api/search-review',{requestId:third.requestId,action:'approve',query:'too late'})).status,400);
+  assert.equal(JSON.parse(fs.readFileSync(feed,'utf8')).contexts.length,0);
 });

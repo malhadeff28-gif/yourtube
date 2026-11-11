@@ -14,9 +14,11 @@ for c in data['contexts']:
     contexts.add(c['id'])
     for k,limit in [('name',90),('task',400),('note',300)]: assert isinstance(c.get(k,''),str) and len(c.get(k,''))<=limit
     assert c['name'].strip() and c['task'].strip()
-ids=set()
+associations=set()
 for v in data['videos']:
-    assert re.fullmatch(r'[a-zA-Z0-9_-]{11}',v['id']) and v['id'] not in ids and v['context'] in contexts
-    ids.add(v['id'])
+    assert re.fullmatch(r'[a-zA-Z0-9_-]{11}',v['id']) and v['context'] in contexts
+    association=(v['id'],v['context'])
+    assert association not in associations
+    associations.add(association)
     for k,limit in [('title',200),('channel',100),('reason',300),('source',150)]: assert isinstance(v.get(k),str) and 0<len(v[k].strip())<=limit
-print(f'Valid feed: {len(contexts)} projects, {len(ids)} videos')
+print(f'Valid feed: {len(contexts)} projects, {len(associations)} video associations')
