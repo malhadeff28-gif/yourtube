@@ -83,6 +83,7 @@ test('search review binds the displayed draft and responses to the request ID', 
   status('second','second suggested topic');
   assert.equal(dialog.open,true);
   assert.equal(input.disabled,false);
+  assert.equal(error.textContent,'','fresh status clears the prior connection warning');
   element('search-review-cancel').listeners.click();await tick();
   assert.equal(requests[2].requestId,'second');
   assert.equal(requests[2].action,'cancel');
@@ -97,4 +98,5 @@ test('search review binds the displayed draft and responses to the request ID', 
   status('third','third suggested topic');
   assert.equal(dialog.open,true,'pending review must reopen after reconnect');
   assert.equal(input.value,'third suggested topic');
+  assert.equal(error.textContent,'','a reconnected pending review must not still say connection lost');
 });
