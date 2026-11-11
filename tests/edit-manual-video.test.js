@@ -21,7 +21,8 @@ async function setup(){
  vm.runInNewContext(code,context);await tick();
  const edit=(id=same,project='a')=>el('grid').listeners.click({target:{closest:s=>s==='[data-edit-video]'?{dataset:{editVideo:id,editContext:project}}:null}});
  const submit=()=>el('edit-video-form').listeners.submit({preventDefault(){}});
- return {el,feed,edit,submit,state:()=>JSON.parse(raw),fail:v=>{fail=v},stale:()=>{raw=JSON.stringify({...JSON.parse(raw),saved:[]})},hold:()=>{let release;gate=new Promise(r=>{release=r});return()=>{gate=null;release()}}};
+ const hide=()=>el('grid').listeners.click({target:{closest:s=>s==='[data-hide-project]'?{dataset:{hideProject:same,project:'a'}}:null}});
+ return {el,feed,edit,submit,hide,state:()=>JSON.parse(raw),fail:v=>{fail=v},stale:()=>{raw=JSON.stringify({...JSON.parse(raw),saved:[]})},hold:()=>{let release;gate=new Promise(r=>{release=r});return()=>{gate=null;release()}}};
 }
 
 test('edits only the browser-owned video in its project and preserves saved, watched and Live data',async()=>{
@@ -44,4 +45,9 @@ test('editing unavailable, hidden or deleting projects cannot create or resurrec
 
 test('an old edit response does not close or replace a newer dialog draft',async()=>{
  const a=await setup();await a.edit();a.el('edit-video-name').value='First draft';const release=a.hold(),pending=a.submit();await tick();a.el('edit-video-dialog').close();await a.edit(same,'b');a.el('edit-video-name').value='Newer draft';release();await pending;assert.equal(a.el('edit-video-dialog').open,true);assert.equal(a.el('edit-video-name').value,'Newer draft');
+});
+
+
+test('project hide prevents an open edit from saving and preserves other project details',async()=>{
+ const a=await setup();await a.edit();a.el('edit-video-name').value='Unsaved draft';await a.hide();const before=a.state();await a.submit();assert.deepEqual(a.state(),before);assert.equal(a.el('edit-video-dialog').open,true);assert.match(a.el('edit-video-error').textContent,/removed|no longer available/i);a.el('edit-video-dialog').close();await a.edit();assert.equal(a.el('edit-video-dialog').open,false);assert.equal(a.state().customVideos[1].title,'Other project title');
 });
