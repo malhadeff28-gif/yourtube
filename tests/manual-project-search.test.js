@@ -24,6 +24,7 @@ const fs=require('node:fs');process.stdin.setEncoding('utf8');let prompt='';proc
  await waitFor(()=>fs.existsSync(path.join(dir,'calls-1')),'fake search did not start');
  const call=JSON.parse(fs.readFileSync(path.join(dir,'calls-1'),'utf8'));assert.equal(call.search,true);assert.match(call.prompt,/synthetic project topic/);assert.doesNotMatch(call.prompt,/Project A|Study A|Project B|Study B/,'stored project details must not be sent');
  assert.equal((await post('/api/manual-search',{id:b,query:'second topic'})).status,409);
+ assert.equal((await post('/api/context/sync',{id:'a',name:'Changed',task:'Changed task',expected:original.contexts[0]})).status,409,'manual search must block copying context while shared worker is active');
  assert.equal((await post('/api/live',{enabled:true,expectedEnabled:false})).status,409);
  fs.writeFileSync(path.join(dir,'release-1'),'');const ready=await waitFor(async()=>{const s=await status(base);return s.manualSearch?.id===a&&s.manualSearch.state==='ready'&&s.manualSearch},'manual search did not finish');
  assert.equal(ready.videos.length,1,'duplicates are removed');assert.equal(ready.videos[0].id,'testVideo01');assert.deepEqual(JSON.parse(fs.readFileSync(feed,'utf8')),original,'manual search must not write project or feed data');assert.equal((await status(base)).enabled,false);
