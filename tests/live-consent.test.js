@@ -31,6 +31,8 @@ test('enabling Live requires an explicit review and confirmation', async()=>{
  assert.match(html,/already been sent to Codex/);
  const consent=html.match(/<dialog id="live-consent"[\s\S]*?<\/dialog>/)[0];
  const info=html.match(/<dialog id="info-dialog"[\s\S]*?<\/dialog>/)[0];
+ assert.match(consent,/aria-describedby="live-consent-data live-consent-limits live-consent-search"/);
+ for(const id of ['live-consent-data','live-consent-limits','live-consent-search']) assert.match(consent,new RegExp(`id="${id}"`));
  assert.match(consent,/Live may miss the first message in a newly discovered chat/);
  assert.match(consent,/including messages sent while paused, may be read after Live is enabled/);
  assert.match(info,/including text written while paused, to be read after Live is enabled/);
