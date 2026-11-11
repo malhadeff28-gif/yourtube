@@ -36,6 +36,24 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   const event = text => JSON.stringify({ type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text}]}})+'\n';
   const waitForText = text => waitFor(()=>fs.existsSync(marker)&&fs.readFileSync(marker,'utf8').includes(text));
 
+  // Each malformed shape and a valid event share one read; neither the rest of
+  // that read nor a future append may be lost or combined with bad bytes.
+  const malformed = [
+    null,
+    { type:'response_item', payload:null },
+    { type:'response_item', payload:{type:'message',role:'user',content:{type:'input_text',text:'object content'}} },
+    { type:'response_item', payload:{type:'message',role:'user',content:[null,{type:'input_text',text:{invalid:'object text'}}]} },
+  ];
+  for (let i=0;i<malformed.length;i++) {
+    const sentinel = `A valid synthetic message following malformed record ${i}.`;
+    fs.appendFileSync(session, JSON.stringify(malformed[i])+'\n'+event(sentinel));
+    await waitForText(sentinel);
+  }
+  fs.appendFileSync(session,event('A valid synthetic message in the later append.'));
+  await waitForText('A valid synthetic message in the later append.');
+  const observed = fs.readFileSync(marker,'utf8');
+  assert.doesNotMatch(observed,/object content|object text/);
+
   // A single append exceeding the read chunk must not strand its last record.
   fs.appendFileSync(session, JSON.stringify({type:'synthetic_padding',value:'x'.repeat(600000)})+'\n'+event('A tail message after the large synthetic append.'));
   await waitForText('A tail message after the large synthetic append.');
