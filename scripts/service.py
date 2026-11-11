@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install/remove the user's explicitly requested per-login YourTube service."""
+"""Install the user's explicitly requested per-login YourTube service."""
 import os, pathlib, plistlib, shutil, subprocess, sys
 root=pathlib.Path(__file__).resolve().parents[1]
 label='com.max.yourtube.live'
@@ -11,26 +11,36 @@ if len(sys.argv)!=2 or sys.argv[1] not in ('install','remove'):
     raise SystemExit('Usage: python3 scripts/service.py install|remove')
 if sys.argv[1]=='remove':
     if not plist.exists():
-        print('No YourTube LaunchAgent file found; no service was stopped.')
+        print('No YourTube LaunchAgent file found; no service was stopped. A loaded service may still exist.')
     else:
-        existing=plistlib.loads(plist.read_bytes())
-        if existing.get('Label')!=label or str(root/'server.js') not in existing.get('ProgramArguments',[]):
-            raise SystemExit('Refusing to remove an unrelated LaunchAgent.')
-        result=subprocess.run(['launchctl','bootout',f'{domain}/{label}'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        if result.returncode:
-            raise SystemExit('Could not stop the YourTube LaunchAgent; its file was retained. The agent may already be stopped or launchctl may have failed.')
-        plist.unlink()
-        print('YourTube LaunchAgent removed.')
+        raise SystemExit('Existing LaunchAgent file retained and no service stopped. Inspect the file and loaded job manually; see the README for removal steps.')
 else:
+    # A matching file does not prove that launchd's loaded service came from it.
+    # Do not stop or replace anything when the shared label/file already exists.
     if plist.exists():
-        existing=plistlib.loads(plist.read_bytes())
-        if existing.get('Label')!=label or str(root/'server.js') not in existing.get('ProgramArguments',[]):
-            raise SystemExit('Refusing to overwrite an unrelated LaunchAgent.')
-        subprocess.run(['launchctl','bootout',f'{domain}/{label}'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        raise SystemExit('Existing LaunchAgent file retained and no service stopped. Inspect the file and loaded job manually before reinstalling; see the README.')
     if not pathlib.Path(node).is_file() or not pathlib.Path(codex).is_file():
         raise SystemExit('Node or Codex CLI was not found.')
     plist.parent.mkdir(parents=True,exist_ok=True)
     config={'Label':label,'ProgramArguments':[node,str(root/'server.js')], 'WorkingDirectory':str(pathlib.Path.home()), 'RunAtLoad':True,'KeepAlive':True,'ProcessType':'Background', 'EnvironmentVariables':{'YOURTUBE_CODEX':codex,'PATH':'/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'}, 'StandardOutPath':'/dev/null','StandardErrorPath':'/dev/null'}
-    plist.write_bytes(plistlib.dumps(config));plist.chmod(0o600)
-    subprocess.run(['launchctl','bootstrap',domain,str(plist)],check=True)
+    data=plistlib.dumps(config)
+    try:
+        fd=os.open(plist,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    except FileExistsError:
+        raise SystemExit('Existing LaunchAgent file retained and no service stopped. Inspect it manually before reinstalling; see the README.')
+    with os.fdopen(fd,'wb') as output:
+        created=os.fstat(output.fileno())
+        output.write(data)
+    try:
+        subprocess.run(['launchctl','bootstrap',domain,str(plist)],check=True)
+    except (OSError,subprocess.CalledProcessError):
+        # Remove only the file we created, and only while its identity and content
+        # still match; leave any concurrent replacement untouched for inspection.
+        try:
+            current=plist.stat()
+            if (current.st_dev,current.st_ino)==(created.st_dev,created.st_ino) and plist.read_bytes()==data:
+                plist.unlink()
+        except OSError:
+            pass
+        raise SystemExit('Could not start the YourTube LaunchAgent. No loaded service was stopped; inspect the job and any remaining file manually.')
     print('YourTube LaunchAgent installed and started.')

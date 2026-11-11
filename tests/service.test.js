@@ -16,61 +16,64 @@ function setup(t) {
   fs.mkdirSync(bin);
   const marker = path.join(home, 'launchctl-calls');
   fs.writeFileSync(path.join(bin, 'launchctl'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_LAUNCHCTL_MARKER"\nexit "${TEST_LAUNCHCTL_EXIT:-0}"\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.symlinkSync(process.execPath, path.join(bin, 'node'));
   const plist = path.join(home, 'Library', 'LaunchAgents', `${label}.plist`);
   fs.mkdirSync(path.dirname(plist), { recursive: true });
   const env = { ...process.env, HOME: home, PATH: `${bin}${path.delimiter}${process.env.PATH}`, TEST_LAUNCHCTL_MARKER: marker };
-  const remove = (extraEnv = {}) => spawnSync('python3', [path.join(root, 'scripts', 'service.py'), 'remove'], { env: { ...env, ...extraEnv }, encoding: 'utf8' });
+  const run = (action, extraEnv = {}) => spawnSync('python3', [path.join(root, 'scripts', 'service.py'), action], { env: { ...env, ...extraEnv }, encoding: 'utf8' });
   const writePlist = (agentLabel, program) => {
     const escape = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     fs.writeFileSync(plist, `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>${escape(agentLabel)}</string><key>ProgramArguments</key><array><string>/usr/bin/node</string><string>${escape(program)}</string></array></dict></plist>`);
   };
-  return { marker, plist, remove, writePlist };
+  return { marker, plist, run, writePlist };
 }
 
-test('removal leaves an unrelated LaunchAgent running and unchanged', t => {
-  const { marker, plist, remove, writePlist } = setup(t);
-  writePlist(label, '/unrelated/checkout/server.js');
-  const original = fs.readFileSync(plist);
-  const result = remove();
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Refusing to remove an unrelated LaunchAgent/);
-  assert.equal(fs.existsSync(marker), false);
-  assert.deepEqual(fs.readFileSync(plist), original);
-});
+for (const action of ['install', 'remove']) {
+  for (const [kind, program] of [['matching', path.join(root, 'server.js')], ['unrelated', '/unrelated/checkout/server.js']]) {
+    test(`${action} leaves an existing ${kind} LaunchAgent and loaded job untouched`, t => {
+      const { marker, plist, run, writePlist } = setup(t);
+      writePlist(label, program);
+      const original = fs.readFileSync(plist);
+      const result = run(action);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /manually|manual/i);
+      assert.equal(fs.existsSync(marker), false, 'must not call launchctl for an existing file');
+      assert.deepEqual(fs.readFileSync(plist), original);
+    });
+  }
+  test(`${action} preserves an unreadable LaunchAgent and service`, t => {
+    const { marker, plist, run } = setup(t);
+    fs.writeFileSync(plist, 'not a plist');
+    const result = run(action);
+    assert.notEqual(result.status, 0);
+    assert.equal(fs.existsSync(marker), false);
+    assert.equal(fs.readFileSync(plist, 'utf8'), 'not a plist');
+  });
+}
 
-test('removal does not stop a service when its LaunchAgent file is missing', t => {
-  const { marker, remove } = setup(t);
-  const result = remove();
+test('remove does not stop a service when its LaunchAgent file is missing', t => {
+  const { marker, run } = setup(t);
+  const result = run('remove');
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /no service was stopped/i);
   assert.equal(fs.existsSync(marker), false);
 });
 
-test('removal stops and deletes the LaunchAgent belonging to this checkout', t => {
-  const { marker, plist, remove, writePlist } = setup(t);
-  writePlist(label, path.join(root, 'server.js'));
-  const result = remove();
+test('fresh installation bootstraps only the newly created file', t => {
+  const { marker, plist, run } = setup(t);
+  const result = run('install');
   assert.equal(result.status, 0, result.stderr);
-  assert.match(fs.readFileSync(marker, 'utf8'), /^bootout gui\/\d+\/com\.max\.yourtube\.live\n$/);
+  assert.match(fs.readFileSync(marker, 'utf8'), /^bootstrap gui\/\d+ .+\.plist\n$/);
+  assert.ok(fs.existsSync(plist));
+});
+
+test('failed bootstrap does not boot out a possibly unrelated loaded job or retain a new file', t => {
+  const { marker, plist, run } = setup(t);
+  const result = run('install', { TEST_LAUNCHCTL_EXIT: '1' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /could not.*start/i);
+  assert.match(fs.readFileSync(marker, 'utf8'), /^bootstrap /);
+  assert.doesNotMatch(fs.readFileSync(marker, 'utf8'), /bootout/);
   assert.equal(fs.existsSync(plist), false);
-});
-
-test('removal leaves an unreadable LaunchAgent file and service untouched', t => {
-  const { marker, plist, remove } = setup(t);
-  fs.writeFileSync(plist, 'not a plist');
-  const result = remove();
-  assert.notEqual(result.status, 0);
-  assert.equal(fs.existsSync(marker), false);
-  assert.equal(fs.readFileSync(plist, 'utf8'), 'not a plist');
-});
-
-test('removal retains the LaunchAgent file when launchctl cannot stop it', t => {
-  const { marker, plist, remove, writePlist } = setup(t);
-  writePlist(label, path.join(root, 'server.js'));
-  const original = fs.readFileSync(plist);
-  const result = remove({ TEST_LAUNCHCTL_EXIT: '1' });
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Could not stop.*file was retained/);
-  assert.match(fs.readFileSync(marker, 'utf8'), /^bootout /);
-  assert.deepEqual(fs.readFileSync(plist), original);
 });
