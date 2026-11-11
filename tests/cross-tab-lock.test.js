@@ -122,5 +122,5 @@ test('successful deletion recovery reports a failed feed refresh',async()=>{
 
 test('pending deletion without Web Locks cannot falsely offer recovery',async()=>{
  const marker=JSON.stringify({__yourtubePendingDeletion:{id:'project',token:'test-token'}}),data=shared(marker);const a=await tab(data,{noLocks:true});
- assert.equal(a('storage-retry-delete').hidden,true);assert.match(a('storage-warning').textContent,/supported browser/i);assert.equal(data.deleteCalls,0);
+ assert.equal(a('storage-retry-delete').hidden,true);assert.match(a('storage-warning').textContent,/same profile/i);assert.equal(data.deleteCalls,0);
 });
