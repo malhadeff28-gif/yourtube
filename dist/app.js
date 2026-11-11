@@ -1,7 +1,14 @@
 'use strict';
 async function start(){
  const loadFeed = async signal => {const response = await fetch('feed.json', {cache:'no-store',signal}); if(!response.ok) throw new Error('Feed unavailable'); const data=await response.json();if(!Array.isArray(data.contexts)||!Array.isArray(data.videos))throw new Error('Invalid feed');return data;};
- window.SEED=await loadFeed(); let feedVersion=JSON.stringify(window.SEED),feedRequest=0;
+ const initialController=new AbortController(),initialTimeout=setTimeout(()=>initialController.abort(),10000);
+ try{window.SEED=await loadFeed(initialController.signal)}catch{
+  const grid=document.getElementById('grid'),warning=document.createElement('p'),retry=document.createElement('button');
+  warning.setAttribute('role','alert');warning.textContent='Could not load the local feed. Live may still be on. Retry when the service is reachable, or stop the service to pause it.';
+  retry.type='button';retry.textContent='Retry loading the feed';retry.addEventListener('click',()=>{retry.disabled=true;grid.textContent='Retrying…';start().catch(()=>{grid.textContent='Unable to start YourTube. Reload the page to try again.'})});
+  grid.replaceChildren(warning,retry);return;
+ }finally{clearTimeout(initialTimeout)}
+ let feedVersion=JSON.stringify(window.SEED),feedRequest=0;
 const $ = id => document.getElementById(id), KEY = 'yourtube.state.v1';
 const blank = () => ({contextEdits:{},customContexts:[],deletedContexts:[],customVideos:[],hiddenVideos:[],saved:[]});
 let state;
