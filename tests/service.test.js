@@ -68,12 +68,13 @@ test('fresh installation bootstraps only the newly created file', t => {
   assert.ok(fs.existsSync(plist));
 });
 
-test('failed bootstrap does not boot out a possibly unrelated loaded job or retain a new file', t => {
+test('failed bootstrap retains the file and does not boot out a possibly unrelated loaded job', t => {
   const { marker, plist, run } = setup(t);
   const result = run('install', { TEST_LAUNCHCTL_EXIT: '1' });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /could not.*start/i);
   assert.match(fs.readFileSync(marker, 'utf8'), /^bootstrap /);
   assert.doesNotMatch(fs.readFileSync(marker, 'utf8'), /bootout/);
-  assert.equal(fs.existsSync(plist), false);
+  assert.ok(fs.existsSync(plist), 'failed bootstrap must leave the file for manual inspection');
+  assert.match(result.stderr, /may load at the next login/i);
 });

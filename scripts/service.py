@@ -29,18 +29,10 @@ else:
     except FileExistsError:
         raise SystemExit('Existing LaunchAgent file retained and no service stopped. Inspect it manually before reinstalling; see the README.')
     with os.fdopen(fd,'wb') as output:
-        created=os.fstat(output.fileno())
         output.write(data)
     try:
         subprocess.run(['launchctl','bootstrap',domain,str(plist)],check=True)
     except (OSError,subprocess.CalledProcessError):
-        # Remove only the file we created, and only while its identity and content
-        # still match; leave any concurrent replacement untouched for inspection.
-        try:
-            current=plist.stat()
-            if (current.st_dev,current.st_ino)==(created.st_dev,created.st_ino) and plist.read_bytes()==data:
-                plist.unlink()
-        except OSError:
-            pass
-        raise SystemExit('Could not start the YourTube LaunchAgent. No loaded service was stopped; inspect the job and any remaining file manually.')
+        # Never remove the pathname: another process may have replaced the file.
+        raise SystemExit('Could not start the YourTube LaunchAgent. No loaded service was stopped. Any agent file was left untouched and may load at the next login; inspect it manually as described in the README.')
     print('YourTube LaunchAgent installed and started.')
