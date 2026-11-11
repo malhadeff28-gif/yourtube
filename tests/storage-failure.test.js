@@ -9,16 +9,16 @@ const { setImmediate: tick } = require('node:timers/promises');
 async function setup({fakeTimers=false,extraProject=false}={}) {
   const elements = new Map();
   function el(id){if(!elements.has(id))elements.set(id,{id,disabled:false,value:'',textContent:'',innerHTML:'',open:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(k,f){this.listeners[k]=f},showModal(){this.open=true},close(){this.open=false;this.listeners.close?.()},replaceChildren(){},reset(){}});return elements.get(id)}
-  let state=JSON.stringify({customVideos:[],customContexts:[],contextEdits:{},deletedContexts:[],hiddenVideos:[],saved:[]}), fail=true, deleteFail=false, refreshFail=false, initialLoaded=false, deletionGate=null, deleteCount=0, timerId=0;
+  let state=JSON.stringify({customVideos:[],customContexts:[],contextEdits:{},deletedContexts:[],hiddenVideos:[],saved:[]}), fail=true, failOnCall=null, writeCalls=0, deleteFail=false, refreshFail=false, initialLoaded=false, deletionGate=null, deleteCount=0, timerId=0;
   const timers=new Map();
   const schedule=fakeTimers?(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id}:setTimeout;
   const unschedule=fakeTimers?id=>timers.delete(id):clearTimeout;
   let feed={contexts:[{id:'project',name:'Project',task:'Task'},...(extraProject?[{id:'other',name:'Other',task:'Other task'}]:[])],videos:[{id:'abc123def45',context:'project',title:'Existing video',channel:'Sample',reason:'Example',source:'Fixture'}],focusContext:'project',contextSource:'Fixture'};
   class FakeEvents{constructor(){this.listeners={}}addEventListener(k,f){this.listeners[k]=f}close(){}}
   const dialogIds=['context-dialog','video-dialog','player-dialog','info-dialog','live-consent','search-review'];
-  const context={window:{},document:{getElementById:el,querySelector:selector=>selector==='dialog[open]'?dialogIds.map(el).find(d=>d.open)||null:null,querySelectorAll:selector=>selector==='dialog'?dialogIds.map(el):[],createElement:()=>el('created')},localStorage:{getItem:()=>state,setItem:(_k,v)=>{if(fail)throw Error('quota exceeded');state=v}},EventSource:FakeEvents,fetch:async(url,options={})=>{if(url==='/api/context/delete'){deleteCount++;if(deletionGate)await Promise.race([deletionGate,new Promise((_,reject)=>options.signal?.addEventListener('abort',()=>reject(Error('aborted'))))]);if(deleteFail)return {ok:false};const id=JSON.parse(options.body).id;feed={...feed,contexts:feed.contexts.filter(c=>c.id!==id),videos:feed.videos.filter(v=>v.context!==id)};return {ok:true}}if(refreshFail&&initialLoaded)return {ok:false};initialLoaded=true;return {ok:true,json:async()=>feed}},setTimeout:schedule,clearTimeout:unschedule,AbortController,URL,console,crypto:{randomUUID:()=> 'new-project'},confirm:()=>true};
+  const context={window:{},document:{getElementById:el,querySelector:selector=>selector==='dialog[open]'?dialogIds.map(el).find(d=>d.open)||null:null,querySelectorAll:selector=>selector==='dialog'?dialogIds.map(el):[],createElement:()=>el('created')},localStorage:{getItem:()=>state,setItem:(_k,v)=>{writeCalls++;if(fail||writeCalls===failOnCall)throw Error('quota exceeded');state=v}},navigator:{locks:{request:async(_key,_opts,fn)=>fn({})}},EventSource:FakeEvents,fetch:async(url,options={})=>{if(url==='/api/context/delete'){deleteCount++;if(deletionGate)await Promise.race([deletionGate,new Promise((_,reject)=>options.signal?.addEventListener('abort',()=>reject(Error('aborted'))))]);if(deleteFail)return {ok:false};const id=JSON.parse(options.body).id;feed={...feed,contexts:feed.contexts.filter(c=>c.id!==id),videos:feed.videos.filter(v=>v.context!==id)};return {ok:true}}if(refreshFail&&initialLoaded)return {ok:false};initialLoaded=true;return {ok:true,json:async()=>feed}},setTimeout:schedule,clearTimeout:unschedule,AbortController,URL,console,crypto:{randomUUID:()=> 'new-project'},confirm:()=>true};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),context);await tick();
-  return {el,timers,saved:()=>JSON.parse(state),deleteCalls:()=>deleteCount,allow:()=>{fail=false},failDelete:()=>{deleteFail=true},failRefresh:()=>{refreshFail=true},holdDeletion:()=>{let release;deletionGate=new Promise(resolve=>{release=resolve});return release}};
+  return {el,timers,saved:()=>JSON.parse(state),deleteCalls:()=>deleteCount,allow:()=>{fail=false},failAfterIntent:()=>{fail=false;failOnCall=writeCalls+2},failDelete:()=>{deleteFail=true},failRefresh:()=>{refreshFail=true},holdDeletion:()=>{let release;deletionGate=new Promise(resolve=>{release=resolve});return release}};
 }
 const submit={preventDefault(){}};
 const click=(selector,id)=>({target:{closest:s=>s===selector?{dataset:{[selector.slice(6,-1)]:id}}:null}});
@@ -26,27 +26,27 @@ const click=(selector,id)=>({target:{closest:s=>s===selector?{dataset:{[selector
 test('failed browser writes keep context and video drafts open without mutating the feed',async()=>{
   const {el,saved,allow}=await setup();
   el('add-context').listeners.click();el('context-name').value='My draft';el('context-task').value='My work';
-  el('context-form').listeners.submit(submit);
+  await el('context-form').listeners.submit(submit);
   assert.equal(el('context-dialog').open,true,'failed context save must retain its dialog');
   assert.equal(el('context-name').value,'My draft');assert.match(el('context-error').textContent,/could not save/i);
   assert.doesNotMatch(el('context-nav').innerHTML,/My draft/);assert.deepEqual(saved().customContexts,[]);
-  allow();el('context-form').listeners.submit(submit);assert.equal(el('context-dialog').open,false);assert.equal(el('context-error').textContent,'');assert.match(el('context-nav').innerHTML,/My draft/);
+  allow();await el('context-form').listeners.submit(submit);assert.equal(el('context-dialog').open,false);assert.equal(el('context-error').textContent,'');assert.match(el('context-nav').innerHTML,/My draft/);
 });
 
 test('failed video and list writes do not produce success or volatile state changes',async()=>{
   const {el,saved,allow}=await setup();
   el('add-video').listeners.click();el('video-url').value='https://youtu.be/xyz123abc45';el('video-title').value='A draft video';el('video-context').value='project';
-  el('video-form').listeners.submit(submit);
+  await el('video-form').listeners.submit(submit);
   assert.equal(el('video-dialog').open,true);assert.equal(el('video-title').value,'A draft video');assert.match(el('video-error').textContent,/could not save/i);assert.doesNotMatch(el('grid').innerHTML,/A draft video/);assert.deepEqual(saved().customVideos,[]);
-  el('grid').listeners.click(click('[data-save]','abc123def45'));assert.match(el('toast').textContent,/could not save/i);assert.doesNotMatch(el('grid').innerHTML,/aria-pressed="true"/);assert.deepEqual(saved().saved,[]);
-  el('grid').listeners.click(click('[data-hide]','abc123def45'));assert.match(el('toast').textContent,/could not save/i);assert.match(el('grid').innerHTML,/Existing video/);assert.deepEqual(saved().hiddenVideos,[]);
-  allow();el('video-form').listeners.submit(submit);assert.equal(el('video-dialog').open,false);assert.equal(el('video-error').textContent,'');assert.match(el('grid').innerHTML,/A draft video/);assert.equal(saved().customVideos.length,1);
-  el('grid').listeners.click(click('[data-save]','abc123def45'));assert.deepEqual(saved().saved,['abc123def45']);
-  el('grid').listeners.click(click('[data-hide]','abc123def45'));assert.deepEqual(saved().hiddenVideos,['abc123def45']);assert.deepEqual(saved().saved,[]);
+  await el('grid').listeners.click(click('[data-save]','abc123def45'));assert.match(el('toast').textContent,/could not save/i);assert.doesNotMatch(el('grid').innerHTML,/aria-pressed="true"/);assert.deepEqual(saved().saved,[]);
+  await el('grid').listeners.click(click('[data-hide]','abc123def45'));assert.match(el('toast').textContent,/could not save/i);assert.match(el('grid').innerHTML,/Existing video/);assert.deepEqual(saved().hiddenVideos,[]);
+  allow();await el('video-form').listeners.submit(submit);assert.equal(el('video-dialog').open,false);assert.equal(el('video-error').textContent,'');assert.match(el('grid').innerHTML,/A draft video/);assert.equal(saved().customVideos.length,1);
+  await el('grid').listeners.click(click('[data-save]','abc123def45'));assert.deepEqual(saved().saved,['abc123def45']);
+  await el('grid').listeners.click(click('[data-hide]','abc123def45'));assert.deepEqual(saved().hiddenVideos,['abc123def45']);assert.deepEqual(saved().saved,[]);
 });
 
 test('delete failure and post-deletion refresh failure are distinguished',async()=>{
-  const failed=await setup();failed.failDelete();failed.el('edit-context').listeners.click();await failed.el('delete-context').listeners.click();
+  const failed=await setup();failed.allow();failed.failDelete();failed.el('edit-context').listeners.click();await failed.el('delete-context').listeners.click();
   assert.match(failed.el('context-error').textContent,/could not confirm project deletion/i);assert.equal(failed.el('context-dialog').open,true);assert.match(failed.el('context-nav').innerHTML,/Project/);
   const refresh=await setup();refresh.allow();refresh.failRefresh();refresh.el('edit-context').listeners.click();await refresh.el('delete-context').listeners.click();
   assert.match(refresh.el('toast').textContent,/deleted.*could not be refreshed/i);assert.doesNotMatch(refresh.el('context-nav').innerHTML,/Project/);
@@ -59,7 +59,7 @@ test('modal errors use alert regions inside each form',()=>{
 });
 
 test('server deletion plus failed local write is reported as partial success',async()=>{
-  const {el}=await setup();el('edit-context').listeners.click();
+  const app=await setup();app.failAfterIntent();const {el}=app;el('edit-context').listeners.click();
   await el('delete-context').listeners.click();
   assert.match(el('toast').textContent,/browser.*(?:not|could not).*sav/i);
   assert.doesNotMatch(el('toast').textContent,/could not delete/i);
@@ -68,7 +68,7 @@ test('server deletion plus failed local write is reported as partial success',as
 
 test('a late deletion response never closes or labels a newer context draft',async()=>{
   for(const mode of ['success','failure','partial']){
-    const app=await setup();if(mode!=='partial')app.allow();const release=app.holdDeletion();app.el('edit-context').listeners.click();
+    const app=await setup();if(mode==='partial')app.failAfterIntent();else app.allow();const release=app.holdDeletion();app.el('edit-context').listeners.click();
     const pending=app.el('delete-context').listeners.click();
     app.el('context-dialog').close();app.el('add-context').listeners.click();app.el('context-name').value='New draft';app.el('context-task').value='Still editing';
     if(mode==='failure')app.failDelete();release();await pending;
@@ -98,17 +98,17 @@ test('a late deletion result preserves a reopened project or video dialog',async
 
 test('same-project drafts cannot be falsely saved during or after deletion',async()=>{
   for(const mode of ['success','partial','uncertain']){
-    const app=await setup();if(mode!=='partial')app.allow();const release=app.holdDeletion();app.el('edit-context').listeners.click();
+    const app=await setup();if(mode==='partial')app.failAfterIntent();else app.allow();const release=app.holdDeletion();app.el('edit-context').listeners.click();
     const pending=app.el('delete-context').listeners.click();app.el('context-dialog').close();app.el('edit-context').listeners.click();
     app.el('context-name').value='Reopened draft';app.el('context-task').value='Still editing';
-    app.el('context-form').listeners.submit(submit);
+    await app.el('context-form').listeners.submit(submit);
     assert.match(app.el('context-error').textContent,/deletion.*progress/i);assert.equal(app.el('context-dialog').open,true);
     app.el('delete-context').listeners.click();assert.equal(app.deleteCalls(),1,'the same project must not send duplicate deletes');
     if(mode==='uncertain')app.failDelete();release();await pending;
     assert.match(app.el('context-error').textContent,mode==='uncertain'?/could not confirm/i:/deleted/i);
     if(mode==='partial')assert.match(app.el('context-error').textContent,/browser changes could not be saved/i);
     assert.equal(app.el('context-dialog').open,true);assert.equal(app.el('context-name').value,'Reopened draft');
-    app.el('context-form').listeners.submit(submit);
+    await app.el('context-form').listeners.submit(submit);
     assert.equal(app.el('context-dialog').open,true,'unsafe save must leave draft open');
     assert.match(app.el('context-error').textContent,mode==='uncertain'?/could not confirm/i:/deleted/i);
     if(mode==='partial')assert.match(app.el('context-error').textContent,/browser changes could not be saved/i,'partial deletion warning must survive a blocked save');
@@ -123,7 +123,7 @@ test('a hung deletion times out into uncertainty without claiming it was cancele
   deadline.fn();await pending;
   assert.equal(app.el('context-dialog').open,true);assert.equal(app.el('context-name').value,'Preserved draft');
   assert.match(app.el('context-error').textContent,/could not confirm.*reload/i);
-  app.el('context-form').listeners.submit(submit);
+  await app.el('context-form').listeners.submit(submit);
   assert.equal(app.el('context-dialog').open,true);assert.match(app.el('context-error').textContent,/could not confirm/i);
   assert.doesNotMatch(app.el('context-error').textContent,/canceled|cancelled/i);
   assert.equal([...app.timers.values()].filter(timer=>timer.ms===10000).length,0,'request timer must be cleared');
@@ -134,15 +134,16 @@ test('video draft cannot be saved to a pending, deleted, uncertain or unavailabl
     const app=await setup({extraProject:true});app.allow();const release=app.holdDeletion();
     app.el('edit-context').listeners.click();const pending=app.el('delete-context').listeners.click();app.el('context-dialog').close();
     app.el('add-video').listeners.click();app.el('video-url').value='https://youtu.be/xyz123abc45';app.el('video-title').value='Preserved video draft';app.el('video-context').value='project';
-    app.el('video-form').listeners.submit(submit);
+    await app.el('video-form').listeners.submit(submit);
     assert.equal(app.el('video-dialog').open,true);assert.match(app.el('video-error').textContent,/deletion.*progress/i);assert.deepEqual(app.saved().customVideos,[]);
     if(mode==='uncertain')app.failDelete();release();await pending;
-    app.el('video-form').listeners.submit(submit);
+    await app.el('video-form').listeners.submit(submit);
     assert.equal(app.el('video-dialog').open,true);assert.equal(app.el('video-title').value,'Preserved video draft');
     assert.match(app.el('video-error').textContent,mode==='uncertain'?/could not confirm/i:/deleted|unavailable/i);assert.deepEqual(app.saved().customVideos,[]);
-    app.el('video-context').value='missing';app.el('video-form').listeners.submit(submit);
+    app.el('video-context').value='missing';await app.el('video-form').listeners.submit(submit);
     assert.equal(app.el('video-dialog').open,true);assert.match(app.el('video-error').textContent,/unavailable/i);assert.deepEqual(app.saved().customVideos,[]);
-    app.el('video-context').value='other';app.el('video-form').listeners.submit(submit);
-    assert.equal(app.el('video-dialog').open,false);assert.equal(app.saved().customVideos[0].context,'other');assert.equal(app.saved().customVideos[0].title,'Preserved video draft');
+    app.el('video-context').value='other';await app.el('video-form').listeners.submit(submit);
+    if(mode==='uncertain'){assert.equal(app.el('video-dialog').open,true);assert.match(app.el('video-error').textContent,/deletion is unresolved/i);assert.deepEqual(app.saved().customVideos,[])}
+    else{assert.equal(app.el('video-dialog').open,false);assert.equal(app.saved().customVideos[0].context,'other');assert.equal(app.saved().customVideos[0].title,'Preserved video draft')}
   }
 });
