@@ -14,10 +14,10 @@ test('search review binds the displayed draft and responses to the request ID', 
   }
   let source;
   class FakeEvents{
-    constructor(){source=this;this.listeners={}}
+    constructor(){source=this;this.listeners={};this.closed=false}
     addEventListener(type,fn){this.listeners[type]=fn}
     status(value){this.listeners.status({data:JSON.stringify(value)})}
-    close(){}
+    close(){this.closed=true}
   }
   const requests=[];
   let rejectFirst;
@@ -26,11 +26,14 @@ test('search review binds the displayed draft and responses to the request ID', 
     if(url==='/api/search-review'){
       requests.push(JSON.parse(options.body));
       if(requests.length===1)return new Promise((resolve,reject)=>{rejectFirst=reject});
+      if(requests.length===2)return new Promise((resolve,reject)=>{options.signal.addEventListener('abort',()=>reject(Error('aborted')))});
       return {ok:true};
     }
     throw Error(`unexpected request ${url}`);
   };
-  const context={window:{},document:{getElementById:element,querySelectorAll:()=>[],createElement:()=>element('new')},localStorage:{getItem:()=>null,setItem(){}},EventSource:FakeEvents,fetch,setTimeout,clearTimeout,AbortController,URL,console};
+  let timerId=0;const timers=new Map();
+  const fakeSetTimeout=(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id};
+  const context={window:{},document:{getElementById:element,querySelectorAll:()=>[],createElement:()=>element('new')},localStorage:{getItem:()=>null,setItem(){}},EventSource:FakeEvents,fetch,setTimeout:fakeSetTimeout,clearTimeout:id=>timers.delete(id),AbortController,URL,console};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),context);
   await tick();
   const status=(id,query)=>source.status({mode:'awaiting-review',enabled:true,requestId:id,pendingQuery:query,message:'Review'});
@@ -54,4 +57,16 @@ test('search review binds the displayed draft and responses to the request ID', 
   await tick();
   assert.equal(requests[1].requestId,'second');
   assert.equal(requests[1].query,'second suggested topic');
+  const beforeReconnect=source;
+  const deadline=[...timers.values()].find(timer=>timer.ms===10000);
+  assert.ok(deadline,'a pending review request must have a bounded timeout');
+  deadline.fn();await tick();
+  assert.equal(beforeReconnect.closed,true,'a failed request must refresh status');
+  assert.match(error.textContent,/may have been processed/);
+  element('search-review-cancel').listeners.click();
+  assert.equal(requests.length,2,'do not retry before an authoritative status');
+  status('second','second suggested topic');
+  element('search-review-cancel').listeners.click();await tick();
+  assert.equal(requests[2].requestId,'second');
+  assert.equal(requests[2].action,'cancel');
 });
