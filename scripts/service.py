@@ -10,13 +10,15 @@ domain=f'gui/{os.getuid()}'
 if len(sys.argv)!=2 or sys.argv[1] not in ('install','remove'):
     raise SystemExit('Usage: python3 scripts/service.py install|remove')
 if sys.argv[1]=='remove':
-    subprocess.run(['launchctl','bootout',f'{domain}/{label}'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-    if plist.exists():
+    if not plist.exists():
+        print('No YourTube LaunchAgent file found; no service was stopped.')
+    else:
         existing=plistlib.loads(plist.read_bytes())
         if existing.get('Label')!=label or str(root/'server.js') not in existing.get('ProgramArguments',[]):
             raise SystemExit('Refusing to remove an unrelated LaunchAgent.')
+        subprocess.run(['launchctl','bootout',f'{domain}/{label}'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         plist.unlink()
-    print('YourTube LaunchAgent removed.')
+        print('YourTube LaunchAgent removed.')
 else:
     if plist.exists():
         existing=plistlib.loads(plist.read_bytes())
