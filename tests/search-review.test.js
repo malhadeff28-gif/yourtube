@@ -53,24 +53,24 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   assert.equal(warning.mode,'awaiting-review');
   assert.equal(warning.requestId,pending.requestId);
   assert.equal(warning.pendingQuery,pending.pendingQuery);
-  // A browser-only project has no server-feed ID; deleting it must not cancel unrelated work.
+  // A browser-only deletion is disabled and must not cancel unrelated work.
   const unchangedFeed = fs.readFileSync(feed, 'utf8');
-  assert.equal((await post('/api/context/delete',{id:'browser-only-project'})).status,200);
-  assert.equal(fs.readFileSync(feed,'utf8'), unchangedFeed, 'a no-op delete must not rewrite the feed');
+  assert.equal((await post('/api/context/delete',{id:'browser-only-project'})).status,503);
+  assert.equal(fs.readFileSync(feed,'utf8'), unchangedFeed, 'disabled deletion must not rewrite the feed');
   const afterRetry = await status();
   assert.equal(afterRetry.mode,'awaiting-review');
   assert.equal(afterRetry.requestId,pending.requestId);
   assert.equal(afterRetry.pendingQuery,pending.pendingQuery);
-  // If the feed cannot be read safely, deletion must fail before canceling work.
+  // Disabled deletion must not depend on feed readability or cancel active work.
   fs.writeFileSync(feed, '{invalid synthetic feed');
-  assert.equal((await post('/api/context/delete',{id:'example'})).status,400);
+  assert.equal((await post('/api/context/delete',{id:'example'})).status,503);
   fs.writeFileSync(feed, unchangedFeed);
   assert.equal((await status()).requestId,pending.requestId);
   fs.writeFileSync(failRename, 'fail');
-  assert.equal((await post('/api/context/delete',{id:'example'})).status,400);
-  assert.equal((await status()).requestId,pending.requestId,'a failed delete write must not cancel active review');
+  assert.equal((await post('/api/context/delete',{id:'example'})).status,503);
+  assert.equal((await status()).requestId,pending.requestId,'disabled deletion must not cancel active review');
   assert.equal(fs.readFileSync(feed,'utf8'),unchangedFeed);
-  assert.equal(fs.readdirSync(dir).some(name=>name.startsWith('feed.json.delete-')),false,'failed delete must remove its temporary file');
+  assert.equal(fs.readdirSync(dir).some(name=>name.startsWith('feed.json.delete-')),false,'disabled deletion must not create a temporary file');
   fs.unlinkSync(failRename);
   await delay(200);
   assert.equal(fs.readFileSync(marker,'utf8').trim().split('\n').length,1,'search must not start before review');
@@ -94,8 +94,8 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   const stillPending = await status();
   assert.equal(stillPending.mode,'awaiting-review','new chat activity must not hide the pending review');
   assert.equal(stillPending.requestId,pending.requestId);
-  assert.equal((await post('/api/context/delete',{id:'already-deleted'})).status,200);
-  assert.equal((await status()).requestId,pending.requestId,'retry must not cancel an active review or its queued follow-up');
+  assert.equal((await post('/api/context/delete',{id:'already-deleted'})).status,503);
+  assert.equal((await status()).requestId,pending.requestId,'disabled deletion must not cancel an active review or its queued follow-up');
   await post('/api/live',{enabled:true});
   assert.equal((await status()).requestId,pending.requestId,'a repeated enable must not cancel or hide the review');
   assert.equal((await status()).mode,'awaiting-review');
@@ -129,8 +129,9 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   await post('/api/live',{enabled:true});
   fs.appendFileSync(session,JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'One more synthetic work message to review before deleting the project.'}]}})+'\n');
   const third = await waitFor(async()=>{const s=await status();return s.mode==='awaiting-review'&&s});
-  assert.equal((await post('/api/context/delete',{id:'example'})).status,200);
-  assert.equal((await status()).mode,'listening','a real deletion must still cancel ongoing review');
-  assert.equal((await post('/api/search-review',{requestId:third.requestId,action:'approve',query:'too late'})).status,400);
-  assert.equal(JSON.parse(fs.readFileSync(feed,'utf8')).contexts.length,0);
+  const beforeBlockedDelete=fs.readFileSync(feed,'utf8');
+  assert.equal((await post('/api/context/delete',{id:'example'})).status,503);
+  assert.equal((await status()).requestId,third.requestId,'disabled deletion must not cancel active review');
+  assert.equal(fs.readFileSync(feed,'utf8'),beforeBlockedDelete,'disabled deletion must not mutate the feed');
+  assert.equal((await post('/api/search-review',{requestId:third.requestId,action:'cancel'})).status,200);
 });
