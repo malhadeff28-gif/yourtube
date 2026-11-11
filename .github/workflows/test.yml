@@ -21,3 +21,5 @@ jobs:
         run: python3 scripts/validate_feed.py dist/feed.example.json
       - name: Run illustrative relevance evaluation
         run: node evaluation/relevance.js
+      - name: Run mock acceptance flow
+        run: node scripts/acceptance.js --mock
