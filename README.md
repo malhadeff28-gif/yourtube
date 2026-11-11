@@ -24,6 +24,8 @@ node server.js
 
 Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an empty feed and live chat reading **paused**. Live always starts paused after a service restart, even if it was enabled before; after reading the privacy section, click **Live**, review the disclosure, and select **Enable Live** to enable it for the current run. Canceling the dialog leaves Live paused. Stop the server with Ctrl-C.
 
+To request videos without reading chats, select **Find videos for a project** while Live is paused, choose a project already stored in the local feed, and enter a general public topic. Selecting **Search** sends that phrase to Codex and may send it to web search providers; YouTube receives candidate video IDs for metadata verification. This uses your Codex allowance. Only feed-stored projects are supported for now; projects created solely in browser storage are not available. Manual search and Live work do not run together, and a running manual search can be canceled.
+
 For a no-chat example, select **Try a sample feed** on an empty feed or visit [the sample page](http://127.0.0.1:8765/demo.html). It contains static example videos and makes no model or YouTube requests until you choose an external video link.
 
 Run the isolated startup and privacy-control checks with `node --test tests/*.test.js`. They use a temporary synthetic session and a fake Codex executable; they do not read your chats or contact a model.
