@@ -10,7 +10,7 @@ let clients=new Set(), entries=new Map(), queue=[], recent=new Map(), expiry=new
 let state={mode:'starting',message:'Starting live chat connection',lastUpdate:null,lastSearch:null};
 function notify(type,value){const body=`event: ${type}\ndata: ${JSON.stringify(value)}\n\n`;for(const r of clients)r.write(body)}
 function setState(mode,message,more={}){state={...state,mode,message,...more,enabled,watcherReady:Boolean(watcher)};notify('status',state)}
-function walk(dir){for(const d of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,d.name);if(d.isDirectory())walk(p);else if(d.isFile()&&p.endsWith('.jsonl')){const stat=fs.statSync(p);entries.set(p,{offset:stat.size,dev:stat.dev,ino:stat.ino,pending:'',allowed:null})}}}
+function walk(dir){for(const d of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,d.name);if(d.isDirectory())walk(p);else if(d.isFile()&&p.endsWith('.jsonl')){const stat=fs.statSync(p,{bigint:true});entries.set(p,{offset:Number(stat.size),dev:String(stat.dev),ino:String(stat.ino),pending:'',allowed:null})}}}
 function allowed(fd){try{const buf=Buffer.alloc(262144),size=fs.readSync(fd,buf,0,buf.length,0);const line=buf.subarray(0,size).toString('utf8').split('\n')[0],head=JSON.parse(line),meta=head.payload||{};return head.type==='session_meta'&&meta.originator==='Codex Desktop'&&meta.source==='vscode'&&['user','agent_created_thread',null,undefined].includes(meta.thread_source);}catch{return null}}
 function redact(s){return s.replace(/https?:\/\/\S+/gi,'[link]').replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi,'[email]').replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{12,}\b/g,'[key]').replace(/\b(?:password|passcode|token|secret|api[-_ ]?key)\s*[:=]\s*\S+/gi,'[credential]').replace(/(?:\/[\w .-]+){3,}/g,'[path]').slice(0,2500)}
 // Read bounded chunks without depending on another fs.watch notification. Keep only
@@ -19,7 +19,7 @@ const READ_CHUNK_BYTES=512*1024, MAX_RECORD_BYTES=1024*1024;
 function clearFileHistory(file){recent.delete(file);if(expiry.has(file)){clearTimeout(expiry.get(file));expiry.delete(file)}queue=queue.filter(x=>x.file!==file)}
 function readNew(file){try{
   const fd=fs.openSync(file,'r');try{
-  const stat=fs.fstatSync(fd);let e=entries.get(file);
+  const before=fs.fstatSync(fd,{bigint:true}),stat={size:Number(before.size),dev:String(before.dev),ino:String(before.ino)};let e=entries.get(file);
   if(!e){
     // The file may have been created while paused or during the enable scan.
     // Establish a baseline instead of replaying bytes of unknown age.
@@ -35,10 +35,17 @@ function readNew(file){try{
   const permitted=allowed(fd);
   if(permitted===null)return;
   if(!permitted){e.offset=stat.size;e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=false;clearFileHistory(file);return}
-  e.allowed=true;
   const len=Math.min(stat.size-e.offset,READ_CHUNK_BYTES),buf=Buffer.alloc(len);
   const got=fs.readSync(fd,buf,0,len,e.offset);
-  e.offset+=got;
+  // Recheck the header and file version before consuming any captured text.
+  const stillPermitted=allowed(fd),after=fs.fstatSync(fd,{bigint:true});
+  let current;try{current=fs.statSync(file,{bigint:true})}catch{current=null}
+  if(stillPermitted!==true||!current||before.dev!==after.dev||before.ino!==after.ino||before.size!==after.size||before.mtimeNs!==after.mtimeNs||before.ctimeNs!==after.ctimeNs||current.dev!==after.dev||current.ino!==after.ino||current.size!==after.size||current.mtimeNs!==after.mtimeNs||current.ctimeNs!==after.ctimeNs){
+    // A concurrent write, rewrite, or pathname swap makes the captured bytes uncertain.
+    // Skip them; a later event can establish a fresh safe baseline.
+    const latest=current||after;e.offset=Number(latest.size);e.dev=String(latest.dev);e.ino=String(latest.ino);e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=null;clearFileHistory(file);return
+  }
+  e.allowed=true;e.offset+=got;
   if(!Buffer.isBuffer(e.pending))e.pending=Buffer.alloc(0);
   for(let pos=0;pos<got;){
     const end=buf.indexOf(10,pos),complete=end!==-1&&end<got,stop=complete?end:got;
