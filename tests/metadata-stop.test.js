@@ -30,7 +30,7 @@ const fs=require('node:fs');process.on('SIGTERM',()=>{});fs.writeFileSync(proces
   assert.equal((await post('/api/live',{enabled:true})).status,200);
   fs.appendFileSync(session,JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'A synthetic topic for the metadata cancellation test.'}]}})+'\n');
   const pending=await waitFor(async()=>{const s=await readStatus(base);return s.mode==='awaiting-review'&&s},'classification did not reach review');
-  assert.equal((await post('/api/search-review',{requestId:pending.requestId,action:'approve',query:'synthetic topic'})).status,200);
+  assert.equal((await post('/api/search-review',{requestId:pending.requestId,action:'approve',query:'synthetic topic',projectId:pending.pendingProject.id,projectName:pending.pendingProject.name,projectTask:pending.pendingProject.task})).status,200);
   await waitFor(()=>fs.existsSync(marker),'fake metadata process did not start');
   const pid=Number(fs.readFileSync(marker,'utf8'));assert.ok(alive(pid));
   assert.equal((await post('/api/live',{enabled:false})).status,200);
