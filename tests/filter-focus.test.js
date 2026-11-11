@@ -11,7 +11,7 @@ test('filter activation retains keyboard focus without stealing it on refresh',a
   const document={activeElement:body,querySelectorAll:()=>[],createElement:()=>element('new'),getElementById:element};
   function element(id){
     if(elements.has(id))return elements.get(id);
-    const el={id,disabled:false,value:'',textContent:'',open:false,dataset:{},listeners:{},classList:{add(){},remove(){},toggle(){}},addEventListener(type,fn){this.listeners[type]=fn},showModal(){this.open=true},close(){this.open=false},replaceChildren(){}};
+    const el={id,contains:()=>false,disabled:false,value:'',textContent:'',open:false,dataset:{},listeners:{},classList:{add(){},remove(){},toggle(){}},addEventListener(type,fn){this.listeners[type]=fn},showModal(){this.open=true},close(){this.open=false},replaceChildren(){}};
     if(id==='filters'||id==='context-nav'){
       let html='';el.buttons=[];
       Object.defineProperty(el,'innerHTML',{get(){return html},set(value){
