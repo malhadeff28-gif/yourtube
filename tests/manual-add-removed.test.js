@@ -73,3 +73,8 @@ test('project-only removal needs confirmation and is not cleared if the feed cha
  const raw=JSON.stringify({projectHiddenVideos:[{id,context:'a'}]}),store={raw},app=await setup(store,feed([]),true);app.open('a');const release=app.holdLock(),pending=app.submit();assert.equal(app.confirms(),1);app.context.window.SEED.videos.push(video('a'));release();await pending;
  assert.equal(store.raw,raw);assert.equal(app.el('video-dialog').open,true);assert.match(app.el('video-error').textContent,/Recently removed/i);
 });
+
+test('manual add explains an unresolved deletion instead of offering unavailable orphan action',async()=>{
+ const store={raw:JSON.stringify({hiddenVideos:[id],removedVideos:[{id,saved:true}],__yourtubePendingDeletion:{id:'a',token:'synthetic'}})},app=await setup(store,feed([])),before=store.raw;app.open('c');await app.submit();
+ assert.equal(store.raw,before);assert.match(app.el('video-error').textContent,/deletion is unresolved/i);assert.doesNotMatch(app.el('video-error').textContent,/Allow adding again/i);assert.equal(app.el('video-title').value,'My draft');
+});
