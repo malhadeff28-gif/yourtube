@@ -26,7 +26,8 @@ async function fixture(t) {
  t.after(async()=>{if(child.exitCode===null){const done=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true})});
  await waitFor(async()=>{try{return (await fetch(`${base}/feed.json`)).ok}catch{return false}});
  const live = enabled => fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify({enabled})});
- return {sessions,gate,notice,delivered,marker,inject,injected,append,appended,fail,live};
+ const status = () => new Promise((resolve,reject)=>{const req=http.get(`${base}/events`,res=>{let text='';res.on('data',chunk=>{text+=chunk;const match=text.match(/event: status\ndata: ([^\n]+)\n\n/);if(match){res.destroy();resolve(JSON.parse(match[1]))}});res.on('error',reject)});req.on('error',reject)});
+ return {sessions,gate,notice,delivered,marker,inject,injected,append,appended,fail,live,status};
 }
 
 test('delayed notification for a new paused session does not replay it', {timeout:10000}, async t=>{
@@ -73,6 +74,23 @@ test('a session first discovered live skips existing contents but processes late
  const file=path.join(f.sessions,'new-live.jsonl');fs.writeFileSync(file,meta+event('A first fresh message in a new session.'));
  await waitFor(()=>fs.existsSync(f.delivered));await delay(150);assert.equal(fs.existsSync(f.marker),false,'first discovery deliberately baselines content');
  fs.appendFileSync(file,event('A later fresh message in the new session.'));await waitFor(()=>fs.existsSync(f.marker));assert.match(fs.readFileSync(f.marker,'utf8'),/later fresh message/);
+});
+
+test('possible missed activity is a coarse live-session warning', {timeout:10000}, async t=>{
+ const f=await fixture(t);fs.writeFileSync(f.gate,'yes');
+ const paused=path.join(f.sessions,'paused.jsonl');fs.writeFileSync(paused,meta+event('Synthetic paused activity.'));
+ await waitFor(()=>fs.existsSync(f.delivered));assert.equal((await f.status()).activityMayBeMissed,false,'paused scanning must not warn');
+ assert.equal((await (await f.live(true)).json()).activityMayBeMissed,false,'enabling starts without a warning');
+ const before=fs.readFileSync(f.delivered,'utf8').length;
+ const headerOnly=path.join(f.sessions,'header-only.jsonl');fs.writeFileSync(headerOnly,meta);
+ await waitFor(()=>fs.readFileSync(f.delivered,'utf8').length>before);assert.equal((await f.status()).activityMayBeMissed,false,'header-only session must not warn');
+ const source=path.join(f.sessions,'new-synthetic.jsonl');fs.writeFileSync(source,meta+event('A private synthetic message written in a fresh chat.'));
+ await waitFor(async()=> (await f.status()).activityMayBeMissed===true);
+ const warning=await f.status();assert.equal(warning.enabled,true);assert.doesNotMatch(JSON.stringify(warning),/private synthetic message|new-synthetic\.jsonl/,'status must not expose message or file');
+ fs.appendFileSync(source,event('A later synthetic message in the same chat.'));await waitFor(()=>fs.existsSync(f.marker));
+ assert.equal((await f.status()).activityMayBeMissed,true,'later processing must not erase warning');
+ await f.live(false);assert.equal((await f.status()).activityMayBeMissed,false,'pause clears the session warning');
+ assert.equal((await (await f.live(true)).json()).activityMayBeMissed,false,'a new live session starts without a warning');
 });
 
 test('a replaced session cannot reuse cached Desktop authorization', {timeout:10000}, async t=>{

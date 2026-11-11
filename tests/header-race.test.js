@@ -2,6 +2,7 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const http=require('node:http');const {spawn}=require('node:child_process');const {setTimeout:delay}=require('node:timers/promises');
 const meta=o=>JSON.stringify({type:'session_meta',payload:{originator:o,source:'vscode',thread_source:'user'}})+'\n';const msg=text=>JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text}]}})+'\n';
 async function wait(f){for(let i=0;i<200;i++){if(await f())return;await delay(20)}throw Error('timeout')}
+function status(base){return new Promise((resolve,reject)=>{const req=http.get(`${base}/events`,res=>{let text='';res.on('data',chunk=>{text+=chunk;const match=text.match(/event: status\ndata: ([^\n]+)\n\n/);if(match){res.destroy();resolve(JSON.parse(match[1]))}});res.on('error',reject)});req.on('error',reject)})}
 test('header changes between header validation and content read', {timeout:10000},async t=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'watcher-race-')),sessions=path.join(dir,'sessions');fs.mkdirSync(sessions);const file=path.join(sessions,'chat.jsonl'),marker=path.join(dir,'calls'),gate=path.join(dir,'gate'),swapped=path.join(dir,'swapped');fs.writeFileSync(file,meta('Codex Desktop'));assert.equal(meta('Codex Desktop').length,meta('Other Desktop').length);
  const hook=path.join(dir,'hook.cjs');fs.writeFileSync(hook,`const fs=require('fs');const read=fs.readSync;fs.readSync=function(fd,buf,offset,length,position){const n=read.apply(this,arguments);if(position===0&&length===262144&&fs.existsSync(process.env.TEST_GATE)&&!fs.existsSync(process.env.TEST_SWAPPED)){fs.writeFileSync(process.env.TEST_FILE,process.env.TEST_REPLACEMENT);fs.writeFileSync(process.env.TEST_SWAPPED,'yes')}return n};`);
@@ -24,6 +25,8 @@ test('a concurrent append during validation is skipped, then later messages work
  await wait(async()=>{try{return (await fetch(`${base}/feed.json`)).ok}catch{return false}});await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:'{"enabled":true}'});
  fs.writeFileSync(gate,'yes');fs.appendFileSync(file,msg('A first synthetic Desktop triggering event.'));await wait(()=>fs.existsSync(appended));await delay(250);
  assert.equal(fs.existsSync(marker),false,'uncertain concurrent writes are baselined rather than processed');
+ assert.equal((await status(base)).activityMayBeMissed,true,'discarded concurrent writes set a coarse warning');
  fs.appendFileSync(file,msg('A later synthetic Desktop event after a stable read.'));await wait(()=>fs.existsSync(marker));
  const observed=fs.readFileSync(marker,'utf8');assert.match(observed,/later synthetic Desktop event/);assert.doesNotMatch(observed,/first synthetic Desktop|concurrent synthetic Desktop/);
+ assert.equal((await status(base)).activityMayBeMissed,true,'later processing does not erase the warning');
 });
