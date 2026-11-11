@@ -78,7 +78,7 @@ function render(){
 }
 async function refreshFeed(announce=false){const request=++feedRequest,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);try{const next=await loadFeed(controller.signal);if(request!==feedRequest)return;const version=JSON.stringify(next);if(version!==feedVersion){window.SEED=next;feedVersion=version;render();if(announce)toast('YourTube updated for your latest work.')}}catch(err){if(request===feedRequest)throw err}finally{clearTimeout(timeout)}}
 $('context-nav').addEventListener('click',e=>{const btn=e.target.closest('[data-context]');if(btn)selectContext(btn.dataset.context)});
-$('filters').addEventListener('click',e=>{const btn=e.target.closest('[data-context]');if(btn)selectContext(btn.dataset.context);else if(e.target.closest('[data-view]')){active='all';view='saved';render()}else if(e.target.closest('[data-new-context]'))openContext(true)});
+$('filters').addEventListener('click',e=>{const btn=e.target.closest('[data-context]'),saved=e.target.closest('[data-view]');if(btn){const focused=document.activeElement===btn;selectContext(btn.dataset.context);if(focused)[...$('filters').querySelectorAll('[data-context]')].find(item=>item.dataset.context===active)?.focus()}else if(saved){const focused=document.activeElement===saved;active='all';view='saved';render();if(focused)$('filters').querySelector('[data-view="saved"]')?.focus()}else if(e.target.closest('[data-new-context]'))openContext(true)});
 $('search').addEventListener('input',render);
 document.querySelectorAll('.nav').forEach(button=>button.addEventListener('click',()=>{view=button.dataset.view;active='all';render()}));
 $('grid').addEventListener('click',async e=>{
