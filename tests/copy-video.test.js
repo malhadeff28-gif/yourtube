@@ -8,7 +8,7 @@ const {setImmediate:tick}=require('node:timers/promises');
 const code=fs.readFileSync(path.join(__dirname,'../dist/app.js'),'utf8');
 const shared='testVideo01',live='testVideo02';
 async function setup(initial={}){
- const els=new Map(),dialogs=['copy-video-dialog','edit-video-dialog','context-dialog','video-dialog','removed-dialog','manual-search-dialog','player-dialog','info-dialog','live-consent','search-review'];
+ const els=new Map(),dialogs=['video-note-dialog','copy-video-dialog','edit-video-dialog','context-dialog','video-dialog','removed-dialog','manual-search-dialog','player-dialog','info-dialog','live-consent','search-review'];
  const el=id=>{if(!els.has(id))els.set(id,{id,value:'',textContent:'',innerHTML:'',open:false,disabled:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(k,f){this.listeners[k]=f},showModal(){this.open=true},close(){this.open=false;this.listeners.close?.()},replaceChildren(){},reset(){},setAttribute(){},removeAttribute(){},querySelectorAll(){return []},contains(){return false}});return els.get(id)};
  let raw=JSON.stringify({customVideos:[{id:shared,context:'a',title:'Manual title',channel:'One',reason:'My reason',source:'Added by you'},{id:shared,context:'b',title:'Other project',channel:'Two',reason:'Other reason',source:'Added by you'}],saved:[live],watched:[live],...initial}),fail=false,locked=false,gate=null,requests=[];
  const feed={contexts:[{id:'a',name:'Alpha',task:'A'},{id:'b',name:'Beta',task:'B'},{id:'c',name:'Gamma',task:'C'}],videos:[{id:shared,context:'a',title:'Live title',channel:'Live',reason:'Live reason',source:'Live'},{id:live,context:'a',title:'Live only',channel:'Live channel',reason:'Live reason',source:'Live'}],focusContext:'a',contextSource:'Synthetic'};
@@ -48,4 +48,14 @@ test('copy rejects a source changed during an asynchronous lock and does not clo
 test('globally hidden videos and deleted projects cannot be copied',async()=>{
  const hidden=await setup({hiddenVideos:[live]});await hidden.open(live);assert.equal(hidden.el('copy-video-dialog').open,false);assert.equal(hidden.state().customVideos.length,2);
  const deleted=await setup({deletedContexts:['c']});await deleted.open(live);deleted.el('copy-video-project').value='c';const before=deleted.state();await deleted.submit();assert.match(deleted.el('copy-video-error').textContent,/unavailable/i);assert.deepEqual(deleted.state(),before);assert.equal(deleted.el('copy-video-dialog').open,true);
+});
+
+
+test('copied videos respect separate notes, combined filters and project deletion',async()=>{
+ const a=await setup({videoNotes:[{id:live,context:'a',text:'private original'},{id:shared,context:'b',text:'other project'}]});
+ await a.open(live,'a');a.el('copy-video-project').value='c';await a.submit();assert.deepEqual(a.state().videoNotes,[{id:live,context:'a',text:'private original'},{id:shared,context:'b',text:'other project'}]);
+ const filter=(key,id)=>a.el('filters').listeners.click({target:{closest:s=>s===`[data-${key}]`?{dataset:{[key]:id}}:null}});
+ filter('context','c');filter('view','saved');assert.match(a.el('grid').innerHTML,/Live only/);assert.match(a.el('grid').innerHTML,/data-note-video="testVideo02" data-note-context="c"/);
+ await a.el('grid').listeners.click({target:{closest:s=>s==='[data-note-video]'?{dataset:{noteVideo:live,noteContext:'c'}}:null}});assert.equal(a.el('video-note-text').value,'');a.el('video-note-text').value='destination note';await a.el('video-note-form').listeners.submit({preventDefault(){}});
+ a.el('context-id').value='a';await a.el('delete-context').listeners.click();assert.deepEqual(a.state().videoNotes,[{id:shared,context:'b',text:'other project'},{id:live,context:'c',text:'destination note'}]);assert.match(a.el('grid').innerHTML,/Live only/);assert.doesNotMatch(a.el('grid').innerHTML,/private original|destination note/);
 });
