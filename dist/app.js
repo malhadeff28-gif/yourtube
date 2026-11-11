@@ -27,7 +27,7 @@ try {
  state={...blank(),...parsed};
 } catch { state=blank();storageBlocked=true; }
 function showStorageWarning(message){$('storage-warning').textContent=message||'';$('storage-retry-delete').hidden=!(pendingRecovery&&typeof navigator!=='undefined'&&navigator.locks?.request)}
-if(storageBlocked||typeof navigator==='undefined'||!navigator.locks?.request)showStorageWarning(pendingRecovery?'A previous deletion is not fully resolved. Editing is disabled until you retry it; copy any drafts first.':'Browser data could not be safely accessed or coordinated. Editing is disabled; copy any drafts before reloading.');
+if(storageBlocked||typeof navigator==='undefined'||!navigator.locks?.request)showStorageWarning(pendingRecovery&&typeof navigator!=='undefined'&&navigator.locks?.request?'A previous deletion is not fully resolved. Editing is disabled until you retry it; copy any drafts first.':'Browser data could not be safely accessed or coordinated. Editing is disabled; copy any drafts before reloading or using a supported browser.');
 let active = window.SEED.focusContext || 'all', view = 'all', liveState = {mode:'connecting', message:'Connecting to local live service.'};
 const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function contexts(){ return [...window.SEED.contexts.map(c=>({...c,...state.contextEdits[c.id]})),...state.customContexts].filter(c=>!state.deletedContexts.includes(c.id)); }
