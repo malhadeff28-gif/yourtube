@@ -99,3 +99,33 @@ test('a different status during an in-flight start remains locally dismissible',
 test('manual search does not silently re-add a video removed from that project',async()=>{
  const initial=JSON.stringify({projectHiddenVideos:[{id:video.id,context:'a'}]}),a=await app(initial);paused(a);open(a);const pending=submit(a);a.startResolve({ok:true});await pending;paused(a,{id,state:'ready',videos:[video]});choose(a,video.id);await a.el('manual-search-save').listeners.click();const state=JSON.parse(a.getRaw());assert.deepEqual(state.projectHiddenVideos,[{id:video.id,context:'a'}]);assert.equal(state.customVideos,undefined);assert.match(a.el('manual-search-status').textContent,/removed from this project/i);
 });
+
+test('candidate preview links are explicit, isolated from selection, and cleared when results go stale',async()=>{
+ const a=await app(),other={id:'testVideo02',title:'Other & "video"',channel:'Channel',reason:'Reason'};
+ const page=fs.readFileSync(path.join(root,'dist/index.html'),'utf8');assert.match(page,/Open on YouTube opens the video in a new tab and connects to YouTube/);
+ paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;paused(a,{id,state:'ready',videos:[video,other]});
+ const options=a.el('manual-search-options').innerHTML;
+ assert.match(options,/href="https:\/\/www\.youtube\.com\/watch\?v=testVideo01" target="_blank" rel="noopener noreferrer" aria-label="Open Synthetic &lt;title&gt; on YouTube \(opens in a new tab\)"/);
+ assert.match(options,/<\/label><a href=/,'the independent link is outside the checkbox label');
+ assert.match(options,/Open Other &amp; &quot;video&quot; on YouTube/,'accessible name escapes untrusted metadata');
+ assert.doesNotMatch(options,/<iframe|<img/,'candidate rendering does not load embedded content');
+ assert.equal(a.calls.length,1,'rendering candidates makes no preview request');assert.equal(a.el('manual-search-save').disabled,true);
+ choose(a,video.id);paused(a,{id,state:'ready',videos:[video,other]});assert.equal(a.el('manual-search-options').innerHTML,options,'repeated status preserves the focused control');
+ assert.equal(a.el('manual-search-save').disabled,false,'preview link markup does not change selection');
+ a.events.onerror();assert.equal(a.el('manual-search-options').innerHTML,'','disconnection removes links from unconfirmed results');assert.equal(a.el('manual-search-results').hidden,true);assert.equal(a.el('manual-search-save').disabled,true);
+ paused(a,{id,state:'ready',videos:[video]});assert.match(a.el('manual-search-options').innerHTML,/testVideo01/);assert.equal(a.el('manual-search-save').disabled,true,'recovered results need a fresh selection');
+ paused(a,{id,state:'expired'});assert.equal(a.el('manual-search-options').innerHTML,'','expired links are removed');
+});
+
+test('unknown job state and invalid IDs never leave preview links actionable',async()=>{
+ const a=await app();paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;paused(a,{id,state:'ready',videos:[video]});choose(a,video.id);
+ paused(a,{id,state:'unexpected',videos:[video]});assert.equal(a.el('manual-search-options').innerHTML,'');assert.equal(a.el('manual-search-results').hidden,true);assert.equal(a.el('manual-search-save').disabled,true);assert.match(a.el('manual-search-status').textContent,/unknown search status/);
+ paused(a,{id,state:'ready',videos:[{...video,id:'evil" onmouseover="x'}]});assert.equal(a.el('manual-search-options').innerHTML,'','invalid ID cannot produce a URL or markup');assert.match(a.el('manual-search-status').textContent,/invalid results/);
+});
+
+test('discard removes preview links immediately and ignores ready events while cancellation is in flight',async()=>{
+ const a=await app();paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;paused(a,{id,state:'ready',videos:[video]});choose(a,video.id);
+ const cancel=a.el('manual-search-stop').listeners.click();assert.equal(a.el('manual-search-options').innerHTML,'');assert.equal(a.el('manual-search-results').hidden,true);assert.equal(a.el('manual-search-save').disabled,true);
+ paused(a,{id,state:'ready',videos:[video]});assert.equal(a.el('manual-search-options').innerHTML,'','old ready status cannot restore links during cancel');assert.equal(a.el('manual-search-results').hidden,true);
+ a.cancelResolve({ok:true});await cancel;assert.equal(a.el('manual-search-options').innerHTML,'','accepted cancellation does not restore links');paused(a,{id,state:'ready',videos:[video]});assert.equal(a.el('manual-search-options').innerHTML,'','late ready status after the response cannot restore links before confirmation');assert.equal(a.el('manual-search-results').hidden,true);assert.match(a.el('manual-search-status').textContent,/Waiting for cancellation confirmation/);paused(a,{id,state:'canceled'});assert.equal(a.el('manual-search-options').innerHTML,'');assert.match(a.el('manual-search-status').textContent,/canceled|discarded/i);
+});
