@@ -24,7 +24,7 @@ node server.js
 
 Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an empty feed and live chat reading **paused**. After reading the privacy section, click **Live** in the app to enable it. Stop the server with Ctrl-C.
 
-Optionally, `python3 scripts/service.py install` installs a macOS per-user LaunchAgent to run the service at login; `python3 scripts/service.py remove` removes it. Use the foreground server or LaunchAgent, not both. The installer refuses to overwrite an unrelated agent with the same label.
+Optionally, `python3 scripts/service.py install` installs a macOS per-user LaunchAgent to run the service at login; `python3 scripts/service.py remove` removes it. Use the foreground server or LaunchAgent, not both. The installer refuses to overwrite an unrelated agent with the same label. Removal checks the file belongs to this checkout before stopping the label, but cannot establish that a currently loaded job with that label came from the same file. If stopping fails, including when the job is already unloaded, removal leaves the file in place for manual inspection.
 
 ## Privacy and limits
 

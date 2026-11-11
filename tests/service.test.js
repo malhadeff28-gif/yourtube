@@ -15,11 +15,11 @@ function setup(t) {
   const bin = path.join(home, 'bin');
   fs.mkdirSync(bin);
   const marker = path.join(home, 'launchctl-calls');
-  fs.writeFileSync(path.join(bin, 'launchctl'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_LAUNCHCTL_MARKER"\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'launchctl'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_LAUNCHCTL_MARKER"\nexit "${TEST_LAUNCHCTL_EXIT:-0}"\n', { mode: 0o755 });
   const plist = path.join(home, 'Library', 'LaunchAgents', `${label}.plist`);
   fs.mkdirSync(path.dirname(plist), { recursive: true });
   const env = { ...process.env, HOME: home, PATH: `${bin}${path.delimiter}${process.env.PATH}`, TEST_LAUNCHCTL_MARKER: marker };
-  const remove = () => spawnSync('python3', [path.join(root, 'scripts', 'service.py'), 'remove'], { env, encoding: 'utf8' });
+  const remove = (extraEnv = {}) => spawnSync('python3', [path.join(root, 'scripts', 'service.py'), 'remove'], { env: { ...env, ...extraEnv }, encoding: 'utf8' });
   const writePlist = (agentLabel, program) => {
     const escape = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     fs.writeFileSync(plist, `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>${escape(agentLabel)}</string><key>ProgramArguments</key><array><string>/usr/bin/node</string><string>${escape(program)}</string></array></dict></plist>`);
@@ -62,4 +62,15 @@ test('removal leaves an unreadable LaunchAgent file and service untouched', t =>
   assert.notEqual(result.status, 0);
   assert.equal(fs.existsSync(marker), false);
   assert.equal(fs.readFileSync(plist, 'utf8'), 'not a plist');
+});
+
+test('removal retains the LaunchAgent file when launchctl cannot stop it', t => {
+  const { marker, plist, remove, writePlist } = setup(t);
+  writePlist(label, path.join(root, 'server.js'));
+  const original = fs.readFileSync(plist);
+  const result = remove({ TEST_LAUNCHCTL_EXIT: '1' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Could not stop.*file was retained/);
+  assert.match(fs.readFileSync(marker, 'utf8'), /^bootout /);
+  assert.deepEqual(fs.readFileSync(plist), original);
 });

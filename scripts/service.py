@@ -16,7 +16,9 @@ if sys.argv[1]=='remove':
         existing=plistlib.loads(plist.read_bytes())
         if existing.get('Label')!=label or str(root/'server.js') not in existing.get('ProgramArguments',[]):
             raise SystemExit('Refusing to remove an unrelated LaunchAgent.')
-        subprocess.run(['launchctl','bootout',f'{domain}/{label}'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        result=subprocess.run(['launchctl','bootout',f'{domain}/{label}'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        if result.returncode:
+            raise SystemExit('Could not stop the YourTube LaunchAgent; its file was retained. The agent may already be stopped or launchctl may have failed.')
         plist.unlink()
         print('YourTube LaunchAgent removed.')
 else:
