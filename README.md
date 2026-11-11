@@ -37,6 +37,7 @@ Optionally, `python3 scripts/service.py install` installs a macOS per-user Launc
 ## Privacy and limits
 
 - While live mode is enabled, the watcher reads new user text from local Codex Desktop chat files. Up to three recent messages per chat are briefly kept in memory for follow-ups. Pausing clears that memory and discards events while paused.
+- Chat files are read in bounded chunks. An individual JSONL record over 1 MiB is skipped; reading resumes at the next record. This can omit unusually large messages or records.
 - A short excerpt is sent to Codex after best-effort redaction, before search review. **Redaction can miss sensitive information.** Search providers receive the phrase you approve; review it for private details. Pause live mode when discussing anything you do not want processed this way. The app uses your Codex account and may consume its usage allowance.
 - YouTube receives video IDs for metadata verification and requests for thumbnails and playback. No YouTube account or API key is used by the app.
 - Inferred project descriptions and video metadata are stored locally in `dist/feed.json`; browser edits and saved videos are stored in browser site data. Neither is encrypted. The live feed and any legacy settings are ignored by Git; do not commit them.
