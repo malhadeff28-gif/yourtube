@@ -255,7 +255,8 @@ $('copy-video-form').addEventListener('submit',async e=>{
  if(!result.ok){if(same)$('copy-video-error').textContent=result.error;else reportDeletion(result.error);return}
  if(same)$('copy-video-dialog').close();const refocus=same&&document.activeElement===opener;render();if(refocus){const button=[...$('grid').querySelectorAll('[data-copy-video]')].find(item=>item.dataset.copyVideo===target.id&&item.dataset.copyContext===target.project);button?.focus()}reportDeletion('Video copied to the selected project in this browser.');
 });
-let videoDialogGeneration=0;
+let videoDialogGeneration=0,videoFormPending=false,videoProjectSnapshots=new Map();
+function videoProjectIdentity(project){return JSON.stringify({visible:contexts().filter(c=>c.id===project),live:window.SEED.contexts.filter(c=>c.id===project),local:state.customContexts.filter(c=>c.id===project)})}
 let editVideoGeneration=0,editVideoTarget=null,editVideoOpener=null;
 function editVideoBusy(value){for(const id of ['edit-video-name','edit-video-channel','edit-video-reason','edit-video-save'])$(id).disabled=value}
 function openVideoEdit(id,project,opener){
@@ -280,9 +281,39 @@ $('edit-video-form').addEventListener('submit',async e=>{
  if(refocus){const button=[...$('grid').querySelectorAll('[data-edit-video]')].find(item=>item.dataset.editVideo===target.id&&item.dataset.editContext===target.project);button?.focus()}
  reportDeletion('Video details saved in this browser.');
 });
-$('add-video').addEventListener('click',()=>{videoDialogGeneration++;videoFormBusy(false);const cs=contexts();if(!cs.length){toast('Add a project first.');return}$('video-form').reset();$('video-error').textContent='';$('video-context').innerHTML=cs.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');if(active!=='all')$('video-context').value=active;$('video-dialog').showModal()});
+$('add-video').addEventListener('click',()=>{videoDialogGeneration++;videoFormBusy(videoFormPending);const cs=contexts();if(!cs.length){toast('Add a project first.');return}videoProjectSnapshots=new Map(cs.map(c=>[c.id,videoProjectIdentity(c.id)]));$('video-form').reset();$('video-error').textContent='';$('video-context').innerHTML=cs.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');if(active!=='all')$('video-context').value=active;$('video-dialog').showModal()});
 function parseVideoId(value){try{const u=new URL(value);let id='';if(u.hostname==='youtu.be')id=u.pathname.split('/')[1];else if(['youtube.com','www.youtube.com','m.youtube.com'].includes(u.hostname))id=u.pathname==='/watch'?u.searchParams.get('v'):(u.pathname.match(/^\/(?:shorts|embed)\/([^/]+)/)||[])[1];return /^[a-zA-Z0-9_-]{11}$/.test(id||'')?id:null}catch{return null}}
-$('video-form').addEventListener('submit',async e=>{const generation=videoDialogGeneration;e.preventDefault();$('video-error').textContent='';const project=$('video-context').value;if(pendingDeletions.has(project)){$('video-error').textContent='Project deletion is in progress. Your video draft is still here; wait for the result or choose another project.';return}if(uncertainDeletions.has(project)){$('video-error').textContent='Could not confirm whether this project was deleted. Choose another project, or copy your draft and reload to check.';return}if(state.deletedContexts.includes(project)||!contexts().some(c=>c.id===project)){$('video-error').textContent='This project is deleted or unavailable. Choose another project to save your video draft.';return}const id=parseVideoId($('video-url').value.trim());if(!id){$('video-error').textContent='Enter a valid YouTube video link.';return}if(state.hiddenVideos.includes(id)){$('video-error').textContent=restorableVideos(id).length?'This video was removed from your feed. Use Recently removed to restore it before adding; it may also be removed from individual projects. Your draft has not been saved.':'This video was removed from your feed, but no available project contains it. It cannot currently be restored from Recently removed. Your draft has not been saved.';return}const hiddenHere=state.projectHiddenVideos.some(x=>x.id===id&&x.context===project),existingHere=[...window.SEED.videos,...state.customVideos].some(v=>v.id===id&&v.context===project);if(hiddenHere&&existingHere){$('video-error').textContent='This video was removed from this project. Use Recently removed to restore it.';return}if(videos().some(v=>v.id===id&&v.context===project)){$('video-error').textContent='This video is already in this project.';return}if(hiddenHere&&!confirm('This video was removed from this project. Restore it here and add these details?'))return;const item={id,title:$('video-title').value.trim(),channel:$('video-channel').value.trim()||'YouTube',context:$('video-context').value,reason:$('video-reason').value.trim(),source:'Added by you'};if(!item.title)return;const existingIndex=state.customVideos.findIndex(v=>v.id===id&&v.context===project);if(existingIndex!==-1&&!confirm('This hidden video has saved details in this project. Restore it and replace those details with this draft?'))return;const customVideos=state.customVideos.slice();if(existingIndex===-1)customVideos.push(item);else customVideos[existingIndex]=item;const next={...state,projectHiddenVideos:state.projectHiddenVideos.filter(x=>x.id!==id||x.context!==project),customVideos};videoFormBusy(true);const result=await persist(next);const sameDialog=$('video-dialog').open&&generation===videoDialogGeneration;if(sameDialog)videoFormBusy(false);if(!result.ok){if(sameDialog)$('video-error').textContent=result.error;else reportDeletion(result.error);return}if(sameDialog){$('video-dialog').close();active=item.context;view='all'}render();reportDeletion('Video added to your feed.')});
+$('video-form').addEventListener('submit',async e=>{
+ e.preventDefault();if(videoFormPending)return;const generation=videoDialogGeneration;$('video-error').textContent='';
+ const project=$('video-context').value,block=contextSaveBlock(project),target=contexts().find(c=>c.id===project);
+ if(block){$('video-error').textContent=block;return}
+ if(!target){$('video-error').textContent='This project is deleted or unavailable. Choose another project to save your video draft.';return}
+ // The selector may predate a feed refresh; never silently retarget a draft.
+ const projectSnapshot=videoProjectSnapshots.get(project);if(!projectSnapshot||videoProjectIdentity(project)!==projectSnapshot){$('video-error').textContent='This project changed or is unavailable. Copy your draft and reopen Add video to choose again.';return}
+ const id=parseVideoId($('video-url').value.trim());
+ if(!id){$('video-error').textContent='Enter a valid YouTube video link.';return}
+ const removedMessage=()=>restorableVideos(id).length?'This video was removed from your feed. Use Recently removed to restore it before adding; it may also be removed from individual projects. Your draft has not been saved.':'This video was removed from your feed, but no available project contains it. It cannot currently be restored from Recently removed. Your draft has not been saved.';
+ if(state.hiddenVideos.includes(id)){$('video-error').textContent=removedMessage();return}
+ const hiddenHere=state.projectHiddenVideos.some(x=>x.id===id&&x.context===project),existingHere=[...window.SEED.videos,...state.customVideos].some(v=>v.id===id&&v.context===project);
+ if(hiddenHere&&existingHere){$('video-error').textContent='This video was removed from this project. Use Recently removed to restore it.';return}
+ if(existingHere){$('video-error').textContent='This video is already in this project.';return}
+ if(hiddenHere&&!confirm('This video was removed from this project. Restore it here and add these details?'))return;
+ const item={id,title:$('video-title').value.trim(),channel:$('video-channel').value.trim()||'YouTube',context:project,reason:$('video-reason').value.trim(),source:'Added by you'};if(!item.title)return;
+ videoFormPending=true;videoFormBusy(true);
+ const result=await withStorageLock(commit=>{
+  const currentBlock=contextSaveBlock(project);if(currentBlock)return {error:currentBlock};
+  if(!contexts().some(c=>c.id===project)||videoProjectIdentity(project)!==projectSnapshot)return {error:'This project changed or is unavailable. Choose a project again; your video draft is still here.'};
+  if(state.hiddenVideos.includes(id))return {error:removedMessage()};
+  const currentlyHidden=state.projectHiddenVideos.some(x=>x.id===id&&x.context===project),exists=[...window.SEED.videos,...state.customVideos].some(v=>v.id===id&&v.context===project);
+  if(currentlyHidden!==hiddenHere)return {error:'This video’s removal state changed. Review it before adding; your draft is still here.'};
+  if(exists)return {error:currentlyHidden?'This video was removed from this project. Use Recently removed to restore it.':'This video is already in this project.'};
+  const next={...state,projectHiddenVideos:state.projectHiddenVideos.filter(x=>x.id!==id||x.context!==project),customVideos:[...state.customVideos,item]};
+  return commit(next)?{ok:true}:{error:'Could not save to this browser. Your draft is still here; try again.'};
+ });
+ videoFormPending=false;const sameDialog=$('video-dialog').open&&generation===videoDialogGeneration;if($('video-dialog').open)videoFormBusy(false);
+ if(!result.ok){if(sameDialog)$('video-error').textContent=result.error;else reportDeletion(result.error);return}
+ if(sameDialog){$('video-dialog').close();active=item.context;view='all'}render();reportDeletion('Video added to your feed.');
+});
 $('storage-retry-delete').addEventListener('click',async()=>{
  if(!pendingRecovery||!confirm('Retry the previously requested project deletion? Browser edits are disabled until it is resolved.'))return;
  const marker=pendingRecovery; $('storage-retry-delete').disabled=true;
