@@ -112,6 +112,9 @@ test('fresh startup, consent, pause, and restart', { timeout: 15000 }, async t =
   const rejected = await setLive(url, true, 'https://untrusted.example');
   assert.equal(rejected.status, 403);
   assert.equal((await readStatus(url)).mode, 'paused');
+  const stale = await fetch(`${url}/api/live`, { method:'POST', headers:{'content-type':'application/json',origin:url}, body:JSON.stringify({enabled:true,expectedEnabled:true}) });
+  assert.equal(stale.status, 409, 'a stale client must not enable Live');
+  assert.equal((await readStatus(url)).mode, 'paused');
 
   fs.appendFileSync(session, userEvent('A private message sent while the app is paused.'));
   await delay(250);
