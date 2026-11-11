@@ -49,10 +49,10 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   // An oversized line is skipped, then parsing resumes at the next newline.
   fs.appendFileSync(session, JSON.stringify({type:'synthetic_padding',value:'x'.repeat(1200000)})+'\n'+event('A message after the oversized synthetic record.'));
   await waitForText('A message after the oversized synthetic record.');
-  const beforePause = fs.readFileSync(marker,'utf8').trim().split('\n').length;
   const partial = event('A synthetic message begun before pausing and finished while paused.');
-  fs.appendFileSync(session,partial.slice(0,-4));
-  await delay(100);
+  fs.appendFileSync(session,event('A sentinel message before the partial record.')+partial.slice(0,-4));
+  await waitForText('A sentinel message before the partial record.');
+  const beforePause = fs.readFileSync(marker,'utf8').trim().split('\n').length;
   await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:'{"enabled":false}'});
   fs.appendFileSync(session,partial.slice(-4));
   await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:'{"enabled":true}'});
