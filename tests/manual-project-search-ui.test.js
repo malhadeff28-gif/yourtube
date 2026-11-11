@@ -82,5 +82,17 @@ test('a new job never inherits old selections or accepts an old checkbox event',
 
 test('a different authoritative job prevents saving the previous selection',async()=>{
  const a=await app(),otherId='22222222-2222-4222-8222-222222222222';paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;paused(a,{id,state:'ready',videos:[video]});choose(a,video.id);assert.equal(a.el('manual-search-save').disabled,false);
- paused(a,{id:otherId,state:'ready',videos:[video]});assert.equal(a.el('manual-search-save').disabled,true);await a.el('manual-search-save').listeners.click();assert.equal(a.getRaw(),null,'selection from the previous job must not commit');
+ paused(a,{id:otherId,state:'ready',videos:[video]});assert.equal(a.el('manual-search-save').disabled,true);assert.equal(a.el('manual-search-results').hidden,true,'previous results must not appear current');assert.equal(a.el('manual-search-count').textContent,'');assert.match(a.el('manual-search-status').textContent,/different search.*dismiss locally/i);assert.equal(a.el('manual-search-stop').disabled,true,'do not cancel the other job');await a.el('manual-search-save').listeners.click();assert.equal(a.getRaw(),null,'selection from the previous job must not commit');a.el('manual-search-close').listeners.click();assert.match(a.el('toast').textContent,/did not cancel/i);
+});
+
+test('missing service job clears ready choices without claiming cancellation',async()=>{
+ const a=await app();paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;paused(a,{id,state:'ready',videos:[video]});choose(a,video.id);assert.equal(a.el('manual-search-save').disabled,false);
+ paused(a);assert.equal(a.el('manual-search-results').hidden,true);assert.equal(a.el('manual-search-save').disabled,true);assert.match(a.el('manual-search-status').textContent,/not reporting.*may still start or finish/i);assert.equal(a.el('manual-search-stop').disabled,true);assert.equal(a.getRaw(),null);
+ paused(a,{id,state:'ready',videos:[video]});assert.equal(a.el('manual-search-results').hidden,false);assert.equal(a.el('manual-search-save').disabled,true,'recovered results require a fresh choice');choose(a,video.id);assert.equal(a.el('manual-search-save').disabled,false);
+});
+
+test('a different status during an in-flight start remains locally dismissible',async()=>{
+ const a=await app(),otherId='22222222-2222-4222-8222-222222222222';paused(a);open(a);const start=submit(a);
+ paused(a,{id:otherId,state:'searching'});assert.match(a.el('manual-search-status').textContent,/different search/);assert.equal(a.el('manual-search-stop').disabled,true);assert.equal(a.el('manual-search-dialog').open,true);
+ a.startResolve({ok:true});await start;assert.match(a.el('manual-search-status').textContent,/different search/,'a delayed start response must not hide the mismatch');paused(a,{id,state:'ready',videos:[video]});assert.equal(a.el('manual-search-results').hidden,false);choose(a,video.id);assert.equal(a.el('manual-search-save').disabled,false);
 });
