@@ -72,7 +72,7 @@ async function main() {
   const review = await waitFor(async () => { const s = await status(base); if (s.mode === 'error') throw Error(`curation failed: ${s.message}`); return s.mode === 'awaiting-review' && s; }, 180000, 'classification did not reach review');
   console.log('Proposed synthetic-topic search:', review.pendingQuery);
   // --live is explicit consent for this synthetic search, not for real chat data.
-  await post(base, '/api/search-review', { requestId: review.requestId, action: 'approve', query: review.pendingQuery });
+  await post(base, '/api/search-review', { requestId: review.requestId, action: 'approve', query: review.pendingQuery, projectId: review.pendingProject.id, projectName: review.pendingProject.name, projectTask: review.pendingProject.task });
   await waitFor(async () => { const s = await status(base); if (s.mode === 'error') throw Error(`search failed: ${s.message}`); return s.lastUpdate; }, 180000, 'feed was not updated');
   const result = JSON.parse(fs.readFileSync(feed));
   if (!result.contexts.length || !result.videos.length) throw Error('updated feed contains no project or videos');

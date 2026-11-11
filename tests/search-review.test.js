@@ -110,9 +110,9 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   await post('/api/live',{enabled:true});
   fs.appendFileSync(session,JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'A fresh synthetic work message after restarting live mode.'}]}})+'\n');
   pending = await waitFor(async()=>{const s=await status();return s.mode==='awaiting-review'&&s});
-  assert.equal((await post('/api/search-review',{requestId:pending.requestId,action:'approve',query:'edited topic'},'https://untrusted.example')).status,403);
+  assert.equal((await post('/api/search-review',{requestId:pending.requestId,action:'approve',query:'edited topic',projectId:pending.pendingProject.id,projectName:pending.pendingProject.name,projectTask:pending.pendingProject.task},'https://untrusted.example')).status,403);
   assert.equal((await post('/api/search-review',{requestId:pending.requestId,action:'approve',query:'token=secret'})).status,400);
-  assert.equal((await post('/api/search-review',{requestId:pending.requestId,action:'approve',query:'edited topic'})).status,200);
+  assert.equal((await post('/api/search-review',{requestId:pending.requestId,action:'approve',query:'edited topic',projectId:pending.pendingProject.id,projectName:pending.pendingProject.name,projectTask:pending.pendingProject.task})).status,200);
   await waitFor(()=>fs.readFileSync(marker,'utf8').trim().split('\n').length===2);
   const calls=fs.readFileSync(marker,'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(calls[1].search,true);
