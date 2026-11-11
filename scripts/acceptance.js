@@ -52,10 +52,10 @@ async function main() {
   const env = { ...process.env, YOURTUBE_PORT: String(port), YOURTUBE_SESSIONS_DIR: sessions, YOURTUBE_FEED: feed, YOURTUBE_SETTINGS: settings, YOURTUBE_DEBOUNCE_MS: '100' };
   if (mode === '--mock') {
     const fake = path.join(temp, 'fake-codex');
-    fs.writeFileSync(fake, `#!/usr/bin/env node\nconst fs=require('node:fs');process.stdin.resume();process.stdin.on('end',()=>{const out=process.argv[process.argv.indexOf('-o')+1];fs.writeFileSync(out,JSON.stringify(process.argv.includes('--search')?{videos:[{id:'testVideo01',reason:'Example video'}]}:{relevant:true,project:'Sample',task:'Learn about photography',context_id:'',public_search:'photography basics'}))});\n`, { mode: 0o755 });
+    fs.writeFileSync(fake, `#!/usr/bin/env node\nconst fs=require('node:fs');process.stdin.resume();process.stdin.on('end',()=>{const out=process.argv[process.argv.indexOf('-o')+1];fs.writeFileSync(out,JSON.stringify(process.argv.includes('--search')?{videos:[{id:'testVideo01',reason:'First video'},{id:'testVideo01',reason:'Duplicate video'},{id:'testVideo02',reason:'Second video'}]}:{relevant:true,project:'Sample',task:'Learn about photography',context_id:'',public_search:'photography basics'}))});\n`, { mode: 0o755 });
     const curl = path.join(temp, 'curl');
-    fs.writeFileSync(curl, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({title:"Photography basics",author_name:"Example"}));\n', { mode: 0o755 });
-    env.YOURTUBE_CODEX = fake; env.PATH = `${temp}${path.delimiter}${process.env.PATH}`;
+    fs.writeFileSync(curl, '#!/usr/bin/env node\nrequire("node:fs").appendFileSync(process.env.TEST_CURL_CALLS,"call\\n");process.stdout.write(JSON.stringify({title:"Photography basics",author_name:"Example"}));\n', { mode: 0o755 });
+    env.YOURTUBE_CODEX = fake; env.PATH = `${temp}${path.delimiter}${process.env.PATH}`; env.TEST_CURL_CALLS = path.join(temp, 'curl-calls');
   } else {
     console.log('Live mode uses your signed-in Codex CLI and web search, may consume usage, and sends one synthetic topic to the provider.');
   }
@@ -76,6 +76,11 @@ async function main() {
   await waitFor(async () => { const s = await status(base); if (s.mode === 'error') throw Error(`search failed: ${s.message}`); return s.lastUpdate; }, 180000, 'feed was not updated');
   const result = JSON.parse(fs.readFileSync(feed));
   if (!result.contexts.length || !result.videos.length) throw Error('updated feed contains no project or videos');
+  if (mode === '--mock') {
+    if (result.videos.map(video => video.id).join(',') !== 'testVideo01,testVideo02') throw Error('duplicate IDs were not removed in order');
+    if (result.videos[0].reason !== 'First video') throw Error('first occurrence was not retained');
+    if (fs.readFileSync(env.TEST_CURL_CALLS, 'utf8').trim().split('\n').length !== 2) throw Error('duplicate IDs should not cause duplicate metadata requests');
+  }
   await post(base, '/api/live', { enabled: false }); await stop();
   start(); await ready();
   if ((await status(base)).mode !== 'paused') throw Error('service did not restart paused');
