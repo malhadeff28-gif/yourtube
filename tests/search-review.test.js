@@ -13,6 +13,8 @@ test('search waits for a valid user-approved phrase', { timeout: 12000 }, async 
   const sessions = path.join(dir, 'sessions'); fs.mkdirSync(sessions);
   const session = path.join(sessions, 'session.jsonl');
   fs.writeFileSync(session, JSON.stringify({ type: 'session_meta', payload: { originator: 'Codex Desktop', source: 'vscode', thread_source: 'user' } }) + '\n');
+  const feed = path.join(dir, 'feed.json');
+  fs.writeFileSync(feed, JSON.stringify({contexts:[{id:'example',name:'Photography contact@example.com',task:'Study https://example.com/private token=synthetic-secret'}],videos:[],focusContext:'example'}));
   const marker = path.join(dir, 'calls');
   const fake = path.join(dir, 'fake-codex');
   fs.writeFileSync(fake, `#!/usr/bin/env node
@@ -27,7 +29,7 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   const base = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], { cwd: path.resolve(__dirname, '..'), env: {
     ...process.env, YOURTUBE_PORT: String(port), YOURTUBE_SESSIONS_DIR: sessions,
-    YOURTUBE_FEED: path.join(dir, 'feed.json'), YOURTUBE_SETTINGS: path.join(dir, 'settings.json'),
+    YOURTUBE_FEED: feed, YOURTUBE_SETTINGS: path.join(dir, 'settings.json'),
     YOURTUBE_CODEX: fake, YOURTUBE_DEBOUNCE_MS: '40', TEST_MARKER: marker,
   }, stdio: 'ignore' });
   t.after(async () => { if(child.exitCode===null){const done=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true}) });
@@ -41,6 +43,11 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   assert.equal(pending.pendingQuery,'original topic');
   await delay(200);
   assert.equal(fs.readFileSync(marker,'utf8').trim().split('\n').length,1,'search must not start before review');
+  const classification = JSON.parse(fs.readFileSync(marker,'utf8').trim()).input;
+  assert.match(classification, /Photography \[email\]/);
+  assert.match(classification, /Study \[link\] \[credential\]/);
+  assert.match(classification, /"id":"example"/);
+  assert.doesNotMatch(classification, /contact@example\.com|example\.com\/private|synthetic-secret/);
   fs.appendFileSync(session,JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'A second synthetic message while the search is awaiting review.'}]}})+'\n');
   await delay(250);
   const stillPending = await status();
