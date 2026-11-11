@@ -7,7 +7,7 @@ The idea: turn the context in an ongoing work session into a useful starting poi
 ## How it works
 
 1. When **Live** is enabled, the local service watches for new user messages in Codex Desktop session files on this computer. It does not backfill old messages.
-2. A Codex invocation reads a short, best-effort-redacted excerpt and identifies a general work or study topic. A separate invocation searches using a generalized phrase.
+2. A Codex invocation reads a short, best-effort-redacted excerpt and identifies a general work or study topic. Review, edit, or cancel its proposed search phrase before a separate invocation sends it to search providers.
 3. The service checks video IDs against YouTube's public oEmbed endpoint, then updates a local feed. You can edit project context, add videos, save videos for later, and pause live reading.
 
 This prototype is local software, not a hosted product or a YouTube integration. It depends on an installed, signed-in Codex CLI, web search, YouTube, and the current local Codex Desktop chat format. Those integrations may change. Video metadata verification does not verify the content or its relevance.
@@ -31,7 +31,7 @@ Optionally, `python3 scripts/service.py install` installs a macOS per-user Launc
 ## Privacy and limits
 
 - While live mode is enabled, the watcher reads new user text from local Codex Desktop chat files. Up to three recent messages per chat are briefly kept in memory for follow-ups. Pausing clears that memory and discards events while paused.
-- A short excerpt is sent to Codex after best-effort redaction. **Redaction can miss sensitive information.** A separate search receives a generalized phrase, which may also reveal context. Pause live mode when discussing anything you do not want processed this way. The app uses your Codex account and may consume its usage allowance.
+- A short excerpt is sent to Codex after best-effort redaction, before search review. **Redaction can miss sensitive information.** Search providers receive the phrase you approve; review it for private details. Pause live mode when discussing anything you do not want processed this way. The app uses your Codex account and may consume its usage allowance.
 - YouTube receives video IDs for metadata verification and requests for thumbnails and playback. No YouTube account or API key is used by the app.
 - Inferred project descriptions and video metadata are stored locally in `dist/feed.json`; browser edits and saved videos are stored in browser site data. Neither is encrypted. The live feed and settings are ignored by Git; do not commit them.
 - The server binds to loopback and is intended for a single user on their own computer. It has not been audited for shared environments. It cannot follow ChatGPT web/mobile, cloud-only chats, or messages sent while the service is stopped.
