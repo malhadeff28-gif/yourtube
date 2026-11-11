@@ -3,10 +3,11 @@ async function start(){
  const loadFeed = async signal => {const response = await fetch('feed.json', {cache:'no-store',signal}); if(!response.ok) throw new Error('Feed unavailable'); const data=await response.json();if(!Array.isArray(data.contexts)||!Array.isArray(data.videos))throw new Error('Invalid feed');return data;};
  const initialController=new AbortController(),initialTimeout=setTimeout(()=>initialController.abort(),10000);
  try{window.SEED=await loadFeed(initialController.signal)}catch{
-  const grid=document.getElementById('grid'),warning=document.createElement('p'),retry=document.createElement('button');
-  warning.setAttribute('role','alert');warning.textContent='Could not load the local feed. Live may still be on. Retry when the service is reachable, or stop the service to pause it.';
+  const grid=document.getElementById('grid'),warning=document.createElement('p'),retry=document.createElement('button'),pause=document.createElement('button');
+  warning.setAttribute('role','alert');warning.textContent='Could not load the local feed. Live may still be on. Pause Live, retry the feed, or stop the service.';
   retry.type='button';retry.textContent='Retry loading the feed';retry.addEventListener('click',()=>{retry.disabled=true;grid.textContent='Retrying…';start().catch(()=>{grid.textContent='Unable to start YourTube. Reload the page to try again.'})});
-  grid.replaceChildren(warning,retry);return;
+  pause.type='button';pause.textContent='Pause Live';pause.addEventListener('click',async()=>{if(pause.disabled)return;pause.disabled=true;const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);try{const response=await fetch('/api/live',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:false}),signal:controller.signal});if(!response.ok)throw Error();const result=await response.json();if(result.enabled!==false||result.mode!=='paused')throw Error();warning.textContent='Server confirmed Live is paused. Retry loading the feed.'}catch{warning.textContent='Could not confirm Live is paused. Retry, or stop the service to pause it.'}finally{clearTimeout(timeout);pause.disabled=false}});
+  grid.replaceChildren(warning,retry,pause);return;
  }finally{clearTimeout(initialTimeout)}
  let feedVersion=JSON.stringify(window.SEED),feedRequest=0;
 const $ = id => document.getElementById(id), KEY = 'yourtube.state.v1';
