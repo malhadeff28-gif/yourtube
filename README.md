@@ -6,8 +6,8 @@ The idea: turn the context in an ongoing work session into a useful starting poi
 
 ## How it works
 
-1. When **Live** is enabled, the local service watches for new user messages in Codex Desktop session files on this computer. It does not backfill old messages.
-2. A Codex invocation reads a short, best-effort-redacted excerpt and identifies a general work or study topic. A separate invocation searches using a generalized phrase.
+1. When **Live** is enabled, the local service watches for new user messages in Codex Desktop session files on this computer. It normally starts at the end of files found on startup, but delayed discovery or an in-place rewrite can cause older or paused text to be read later.
+2. A Codex invocation reads short, best-effort-redacted excerpts and existing feed context IDs, names and tasks, then identifies a general work or study topic. The existing context fields are not redacted. A separate invocation searches using a derived phrase without a user review step.
 3. The service checks video IDs against YouTube's public oEmbed endpoint, then updates a local feed. You can edit project context, add videos, save videos for later, and pause live reading.
 
 This prototype is local software, not a hosted product or a YouTube integration. It depends on an installed, signed-in Codex CLI, web search, YouTube, and the current local Codex Desktop chat format. Those integrations may change. Video metadata verification does not verify the content or its relevance.
@@ -22,17 +22,17 @@ cd yourtube
 node server.js
 ```
 
-Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). The app starts with an empty feed and live chat reading **paused**. After reading the privacy section, click **Live** in the app to enable it. Stop the server with Ctrl-C.
+Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). A fresh checkout starts with an empty feed and live chat reading **paused**. After reading the privacy section, click **Live** in the app to enable it. Stop the server with Ctrl-C.
 
-Optionally, `python3 scripts/service.py install` installs a macOS per-user LaunchAgent to run the service at login; `python3 scripts/service.py remove` removes it. Use the foreground server or LaunchAgent, not both. The installer refuses to overwrite an unrelated agent with the same label.
+Optionally, `python3 scripts/service.py install` installs a macOS per-user LaunchAgent to run the service at login. Use the foreground server or LaunchAgent, not both. If an agent file already exists, installation refuses to replace it or stop any service, even if it appears to belong to this checkout. `python3 scripts/service.py remove` also leaves an existing file and loaded service untouched: the file alone cannot prove which job is loaded. To remove or reinstall, manually inspect the file in `~/Library/LaunchAgents/com.max.yourtube.live.plist` and the loaded job with `launchctl print gui/$(id -u)/com.max.yourtube.live`; only after confirming ownership should you stop the job with `launchctl bootout gui/$(id -u)/com.max.yourtube.live` and remove the file. The `print` output is for human inspection, not a stable machine-readable API. A fresh installation attempts bootstrap without stopping an existing job. If bootstrap fails, the file is left in place for manual inspection and may load at the next login; verify and remove it manually if you do not want that behavior.
 
 ## Privacy and limits
 
-- While live mode is enabled, the watcher reads new user text from local Codex Desktop chat files. Up to three recent messages per chat are briefly kept in memory for follow-ups. Pausing clears that memory and discards events while paused.
-- A short excerpt is sent to Codex after best-effort redaction. **Redaction can miss sensitive information.** A separate search receives a generalized phrase, which may also reveal context. Pause live mode when discussing anything you do not want processed this way. The app uses your Codex account and may consume its usage allowance.
+- While live mode is enabled, the watcher reads new user text from local Codex Desktop chat files. Up to three recent messages per chat are briefly kept in memory for follow-ups. Pausing clears that memory and the pending queue. Delayed discovery or an in-place rewrite can still cause older or paused text to be read later. The service attempts to save the Live setting across restarts, but a settings write can fail.
+- Short excerpts are sent to Codex after best-effort redaction, alongside existing feed context IDs, names and tasks that are not redacted. **Redaction can miss sensitive information.** A separate search receives a derived phrase without a user review step, and that phrase may also reveal context. Do not rely on pausing to prevent sensitive messages from being processed later. The app uses your Codex account and may consume its usage allowance.
 - YouTube receives video IDs for metadata verification and requests for thumbnails and playback. No YouTube account or API key is used by the app.
 - Inferred project descriptions and video metadata are stored locally in `dist/feed.json`; browser edits and saved videos are stored in browser site data. Neither is encrypted. The live feed and settings are ignored by Git; do not commit them.
-- The server binds to loopback and is intended for a single user on their own computer. It has not been audited for shared environments. It cannot follow ChatGPT web/mobile, cloud-only chats, or messages sent while the service is stopped.
+- The server binds to loopback and is intended for a single user on their own computer. It has not been audited for shared environments. It cannot follow ChatGPT web/mobile or cloud-only chats. It does not reliably exclude messages sent while the service is stopped.
 
 ## Verification and limitations
 
