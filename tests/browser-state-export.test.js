@@ -46,3 +46,10 @@ test('missing, unreadable and oversized values fail explicitly without truncatio
 test('export disclosure precedes reveal and identifies private unencrypted scope',()=>{
  const html=fs.readFileSync(path.join(__dirname,'../dist/index.html'),'utf8');assert.match(html,/private notes, removal records and any pending deletion token/i);assert.match(html,/unencrypted and may be sensitive/i);assert.match(html,/excludes the Live server feed, chats, other browser storage and unsaved drafts/i);assert.match(html,/id="browser-state-export-download" disabled/);
 });
+
+test('a valid unresolved deletion remains hidden and untouched while its state is exported',async()=>{
+ const raw=JSON.stringify({contextEdits:{a:{name:'Old private name'}},videoNotes:[{id:'abc123def45',context:'a',text:'Old private note'}],__yourtubePendingDeletion:{id:'a',token:'test-token'}});
+ const a=await setup(raw);assert.match(a.el('storage-warning').textContent,/unresolved/i);assert.doesNotMatch(a.el('grid').innerHTML,/Old private/);
+ a.el('browser-state-export-open').listeners.click();assert.equal(a.el('browser-state-export-preview').value,'');a.el('browser-state-export-reveal').listeners.click();
+ const snapshot=a.el('browser-state-export-preview').value;assert.equal(JSON.parse(snapshot).raw,raw);a.el('browser-state-export-download').listeners.click();assert.equal(await a.objects.get(a.downloads[0].href).text(),snapshot);assert.deepEqual(a.writes,[]);assert.deepEqual(a.requests,['feed.json']);assert.match(a.el('storage-warning').textContent,/unresolved/i);
+});
