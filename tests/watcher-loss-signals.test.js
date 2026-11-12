@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -35,7 +36,7 @@ if(process.argv[1]&&process.argv[1].endsWith('/server.js')){
  await waitFor(async()=>{try{return (await fetch(`${base}/feed.json`)).ok}catch{return false}});
  let id=0;
  async function notify(filename,removeBeforeRecheck=false,fault=null){const n=++id;await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('watch callback timed out')),2000);function onMessage(m){if(m&&m.ack===n){clearTimeout(timer);child.off('message',onMessage);resolve()}}child.on('message',onMessage);child.send({kind:'synthetic-watch',filename,id:n,removeBeforeRecheck,fault})})}
- const live=async enabled=>(await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify({enabled})})).json();
+ const live=async enabled=>(await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled}))})).json();
  const status=()=>new Promise((resolve,reject)=>{const req=http.get(`${base}/events`,res=>{let text='';res.on('data',chunk=>{text+=chunk;const match=text.match(/event: status\ndata: ([^\n]+)\n\n/);if(match){res.destroy();resolve(JSON.parse(match[1]))}});res.on('error',reject)});req.on('error',reject)});
  return {sessions,marker,release,notify,live,status,waitFor};
 }

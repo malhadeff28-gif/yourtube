@@ -66,13 +66,12 @@ async function main() {
     await waitFor(async () => { if (child.exitCode !== null) throw Error('server exited'); try { return (await fetch(`${base}/feed.json`)).ok; } catch { return false; } }, 5000, 'server did not start');
   }
   start(); await ready();
-  if ((await status(base)).mode !== 'paused') throw Error('fresh instance was not paused');
-  await post(base, '/api/live', { enabled: true });
+  const initial=await status(base);
+  if (initial.mode !== 'paused') throw Error('fresh instance was not paused');
+  await post(base, '/api/live', { enabled: true, automatic:true, controlInstance:initial.controlInstance, expectedGeneration:initial.controlGeneration });
   fs.appendFileSync(session, JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'I am learning beginner photography basics and want helpful video tutorials.' }] } }) + '\n');
-  const review = await waitFor(async () => { const s = await status(base); if (s.mode === 'error') throw Error(`curation failed: ${s.message}`); return s.mode === 'awaiting-review' && s; }, 180000, 'classification did not reach review');
-  console.log('Proposed synthetic-topic search:', review.pendingQuery);
-  // --live is explicit consent for this synthetic search, not for real chat data.
-  await post(base, '/api/search-review', { requestId: review.requestId, action: 'approve', query: review.pendingQuery, projectId: review.pendingProject.id, projectName: review.pendingProject.name, projectTask: review.pendingProject.task });
+  // --live is explicit consent for this synthetic automatic search, not real chat data.
+  // No per-search approval is expected after opting into automatic mode.
   await waitFor(async () => { const s = await status(base); if (s.mode === 'error') throw Error(`search failed: ${s.message}`); return s.lastUpdate; }, 180000, 'feed was not updated');
   const result = JSON.parse(fs.readFileSync(feed));
   if (!result.contexts.length || !result.videos.length) throw Error('updated feed contains no project or videos');
@@ -84,6 +83,6 @@ async function main() {
   await post(base, '/api/live', { enabled: false }); await stop();
   start(); await ready();
   if ((await status(base)).mode !== 'paused') throw Error('service did not restart paused');
-  console.log(`PASS: ${mode.slice(2)} classification, review, search, feed update and paused restart. All state was temporary.`);
+  console.log(`PASS: ${mode.slice(2)} classification, automatic search, feed update and paused restart. All state was temporary.`);
 }
 main().catch(error => { console.error('FAIL:', error.message); process.exitCode = 1; }).finally(async () => { await stop(); fs.rmSync(temp, { recursive: true, force: true }); });

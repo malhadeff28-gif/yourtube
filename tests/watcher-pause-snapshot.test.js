@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -47,7 +48,7 @@ async function fixture(t) {
  const child=spawn(process.execPath,['server.js'],{cwd:root,env:{...process.env,NODE_OPTIONS:`--require=${hook}`,YOURTUBE_PORT:String(port),YOURTUBE_SESSIONS_DIR:sessions,YOURTUBE_FEED:path.join(dir,'feed.json'),YOURTUBE_CODEX:fake,YOURTUBE_DEBOUNCE_MS:'30',TEST_SESSIONS:sessions,TEST_GATE:gate,TEST_NOTICE:notice,TEST_DELIVERED:delivered,TEST_MARKER:marker,TEST_INJECT:inject,TEST_INJECTED:injected,TEST_INJECTED_SESSION:path.join(sessions,'during-scan.jsonl'),TEST_INJECTED_CONTENT:meta+event('A synthetic paused message created during the snapshot.'),TEST_APPEND:append,TEST_APPENDED:appended,TEST_APPEND_SESSION:path.join(sessions,'known.jsonl'),TEST_APPEND_CONTENT:event('A synthetic paused message appended after its first stat.'),TEST_FAIL:fail},stdio:'ignore'});
  t.after(async()=>{if(child.exitCode===null){const done=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true})});
  await waitFor(async()=>{try{return (await fetch(`${base}/feed.json`)).ok}catch{return false}});
- const live = enabled => fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify({enabled})});
+ const live = async enabled => fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled}))});
  const status = () => new Promise((resolve,reject)=>{const req=http.get(`${base}/events`,res=>{let text='';res.on('data',chunk=>{text+=chunk;const match=text.match(/event: status\ndata: ([^\n]+)\n\n/);if(match){res.destroy();resolve(JSON.parse(match[1]))}});res.on('error',reject)});req.on('error',reject)});
  return {sessions,gate,notice,delivered,marker,inject,injected,append,appended,fail,live,status};
 }

@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const http=require('node:http');const {spawn}=require('node:child_process');const {setTimeout:delay}=require('node:timers/promises');
 const meta=JSON.stringify({type:'session_meta',payload:{originator:'Codex Desktop',source:'vscode',thread_source:'user'}})+'\n';const msg=text=>JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text}]}})+'\n';
 async function wait(f){for(let i=0;i<200;i++){if(await f())return;await delay(20)}throw Error('timeout')}
@@ -10,9 +11,9 @@ for (const failureCode of ['EACCES','ENOENT']) test(`failed enable re-stat (${fa
  const child=spawn(process.execPath,['server.js'],{cwd:path.resolve(__dirname,'..'),env:{...process.env,NODE_OPTIONS:`--require=${hook}`,YOURTUBE_PORT:String(port),YOURTUBE_SESSIONS_DIR:sessions,YOURTUBE_FEED:path.join(dir,'feed.json'),YOURTUBE_CODEX:fake,YOURTUBE_DEBOUNCE_MS:'30',TEST_CODE:failureCode,TEST_FILE:file,TEST_GATE:gate,TEST_APPENDED:appended,TEST_FAILED:failed,TEST_MARKER:marker,TEST_PAUSED:msg('A synthetic private message appended while Live is paused.')},stdio:'ignore'});
  t.after(async()=>{if(child.exitCode===null){const done=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true})});
  await wait(async()=>{try{return (await fetch(`${base}/feed.json`)).ok}catch{return false}});fs.writeFileSync(gate,'yes');
- const response=await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:'{"enabled":true}'});const state=await response.json();assert.equal(fs.existsSync(appended),true);assert.equal(fs.existsSync(failed),true);await delay(500);const observed=fs.existsSync(marker)?fs.readFileSync(marker,'utf8'):'';
+ const response=await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled:true}))});const state=await response.json();assert.equal(fs.existsSync(appended),true);assert.equal(fs.existsSync(failed),true);await delay(500);const observed=fs.existsSync(marker)?fs.readFileSync(marker,'utf8'):'';
  assert.doesNotMatch(observed,/private message appended while Live is paused/,'paused content must not reach Codex when the enable snapshot is incomplete');assert.equal(state.enabled,false,'snapshot re-stat failure must not enable Live');assert.equal(state.mode,'error');
- const retried=await (await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:'{"enabled":true}'})).json();assert.equal(retried.enabled,true);
+ const retried=await (await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled:true}))})).json();assert.equal(retried.enabled,true);
  fs.appendFileSync(file,msg('A fresh synthetic message after a successful retry.'));await wait(()=>fs.existsSync(marker));
  assert.doesNotMatch(fs.readFileSync(marker,'utf8'),/private message appended while Live is paused/,'retry must not replay failed-snapshot content');
 });

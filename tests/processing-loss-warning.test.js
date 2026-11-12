@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -24,7 +25,7 @@ const fs=require('node:fs');process.stdin.resume();process.stdin.on('end',()=>{c
  await waitFor(async()=>(await fetch(`${base}/feed.json`)).ok);
  let sequence=0;function notify(){return new Promise((resolve,reject)=>{const id=++sequence,timeout=setTimeout(()=>reject(Error('watch acknowledgement timed out')),3000);const listener=m=>{if(m?.ack===id){clearTimeout(timeout);child.off('message',listener);resolve()}};child.on('message',listener);child.send({kind:'watch',filename:'session.jsonl',id})})}
  async function append(text){fs.appendFileSync(session,message(text));await notify()}
- const post=(endpoint,value)=>fetch(`${base}${endpoint}`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(value)});
+ const post=async(endpoint,value)=>fetch(`${base}${endpoint}`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,value))});
  const status=()=>new Promise((resolve,reject)=>{const req=http.get(`${base}/events`,res=>{let text='';res.on('data',chunk=>{text+=chunk;const m=text.match(/event: status\ndata: ([^\n]+)\n\n/);if(m){res.destroy();resolve(JSON.parse(m[1]))}});res.on('error',reject)});req.on('error',reject)});
  const live=async enabled=>assert.equal((await post('/api/live',{enabled})).status,200);
  const setMode=value=>fs.writeFileSync(mode,value);

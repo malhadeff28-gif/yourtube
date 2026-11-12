@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -34,8 +35,8 @@ test('unavailable chat directory reports an error and can be retried', { timeout
     try { if ((await fetch(`${base}/feed.json`)).ok) break; } catch {}
     await delay(30);
   }
-  const setLive = () => fetch(`${base}/api/live`, { method: 'POST',
-    headers: { 'content-type': 'application/json', origin: base }, body: '{"enabled":true}' });
+  const setLive = async () => fetch(`${base}/api/live`, { method: 'POST',
+    headers: { 'content-type': 'application/json', origin: base }, body: JSON.stringify(await fencedBody(base,{enabled:true})) });
   let status = await (await setLive()).json();
   assert.equal(status.mode, 'error');
   assert.equal(status.enabled, false);

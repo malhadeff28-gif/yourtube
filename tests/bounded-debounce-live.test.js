@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),http=require('node:http'),{spawn}=require('node:child_process'),{setTimeout:delay}=require('node:timers/promises');
 const root=path.resolve(__dirname,'..');
 const meta=JSON.stringify({type:'session_meta',payload:{originator:'Codex Desktop',source:'vscode',thread_source:'user'}})+'\n';
@@ -23,7 +24,7 @@ if(process.argv[1]&&process.argv[1].endsWith('/server.js')){
  await waitFor(async()=>(await fetch(`${base}/feed.json`)).ok);let sequence=0;
  const send=message=>new Promise((resolve,reject)=>{const id=++sequence;const timeout=setTimeout(()=>reject(Error('IPC timeout')),3000);const on=m=>{if(m?.ack===id){clearTimeout(timeout);child.off('message',on);resolve()}};child.on('message',on);child.send({...message,id})});
  async function append(file,text){fs.appendFileSync(path.join(sessions,`${file}.jsonl`),event(text));await send({kind:'watch',filename:`${file}.jsonl`})}
- async function live(enabled){const r=await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify({enabled})});assert.equal(r.status,200)}
+ async function live(enabled){const r=await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled}))});assert.equal(r.status,200)}
  const getCalls=()=>fs.existsSync(calls)?fs.readFileSync(calls,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
  return {sessions,release,send,append,live,waitFor,getCalls};
 }

@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -32,7 +33,7 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   t.after(async () => { if(child.exitCode===null){const done=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true}) });
   async function waitFor(check) { for (let i=0;i<200;i++){if(await check())return;await delay(25)}throw Error('timed out'); }
   await waitFor(async()=>{try{return (await fetch(`${base}/feed.json`)).ok}catch{return false}});
-  await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:'{"enabled":true}'});
+  await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled:true}))});
   const event = text => JSON.stringify({ type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text}]}})+'\n';
   const waitForText = text => waitFor(()=>fs.existsSync(marker)&&fs.readFileSync(marker,'utf8').includes(text));
 
@@ -73,7 +74,7 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   const beforePause = fs.readFileSync(marker,'utf8').trim().split('\n').length;
   await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:'{"enabled":false}'});
   fs.appendFileSync(session,partial.slice(-4));
-  await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:'{"enabled":true}'});
+  await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled:true}))});
   await delay(150);
   assert.equal(fs.readFileSync(marker,'utf8').trim().split('\n').length,beforePause,'partial records must not be replayed after pause');
   fs.appendFileSync(session,event('A new synthetic message after resuming live mode.'));

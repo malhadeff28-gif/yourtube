@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -31,7 +32,7 @@ fs.appendFileSync(process.env.TEST_MARKER,'called\\n');if(process.env.TEST_MODE=
   let stderr='';child.stderr.on('data',x=>{stderr+=x});
   t.after(async()=>{if(child.exitCode===null&&child.signalCode===null){const done=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true})});
   await waitFor(async()=>{try{return(await fetch(`${base}/feed.json`)).ok}catch{return false}},'server did not start');
-  const setLive=enabled=>fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify({enabled})});
+  const setLive=async enabled=>fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled}))});
   return {dir,tmp,session,marker,feed,base,child,setLive,stderr:()=>stderr};
 }
 async function startFake(f){assert.equal((await f.setLive(true)).status,200);fs.appendFileSync(f.session,event('A synthetic topic to exercise shutdown cleanup.'));await waitFor(()=>fs.existsSync(f.marker),'fake Codex did not start')}

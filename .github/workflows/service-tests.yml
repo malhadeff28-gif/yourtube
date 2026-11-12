@@ -1,0 +1,27 @@
+name: LaunchAgent tests
+
+on:
+  push:
+    paths:
+      - 'scripts/service.py'
+      - 'tests/service.test.js'
+      - '.github/workflows/service-tests.yml'
+  pull_request:
+    paths:
+      - 'scripts/service.py'
+      - 'tests/service.test.js'
+      - '.github/workflows/service-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  service-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Test LaunchAgent handling with a fake launchctl
+        run: node --test tests/service.test.js

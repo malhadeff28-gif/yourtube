@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -18,7 +19,7 @@ test('copy to Live updates only an existing project and rejects stale, absent or
  const socket=http.createServer();await new Promise(resolve=>socket.listen(0,'127.0.0.1',resolve));const port=socket.address().port;await new Promise(resolve=>socket.close(resolve));const base=`http://127.0.0.1:${port}`;
  const child=spawn(process.execPath,['server.js'],{cwd:path.resolve(__dirname,'..'),env:{...process.env,YOURTUBE_PORT:String(port),YOURTUBE_SESSIONS_DIR:sessions,YOURTUBE_FEED:feed,YOURTUBE_CODEX:fake,YOURTUBE_DEBOUNCE_MS:'30',TEST_MARKER:marker},stdio:'ignore'});
  t.after(async()=>{if(child.exitCode===null&&child.signalCode===null){const done=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true})});
- const post=(endpoint,body,origin=base)=>fetch(base+endpoint,{method:'POST',headers:{'content-type':'application/json',origin},body:JSON.stringify(body)});
+ const post=async(endpoint,body,origin=base)=>fetch(base+endpoint,{method:'POST',headers:{'content-type':'application/json',origin},body:JSON.stringify(await fencedBody(base,body))});
  await waitFor(async()=>{try{return (await fetch(base+'/feed.json')).ok}catch{return false}},'server failed to start');
  const request={id:'a',name:'New A',task:'Changed task',expected:original.contexts[0]};assert.equal((await post('/api/context/sync',request,'https://untrusted.example')).status,403);assert.equal((await post('/api/context/sync',{...request,name:' '})).status,400);assert.equal((await post('/api/context/sync',request)).status,200);
  let updated=JSON.parse(fs.readFileSync(feed,'utf8'));assert.deepEqual(updated.contexts[0],{id:'a',name:'New A',task:'Changed task',note:'Keep this note'});assert.deepEqual(updated.contexts[1],original.contexts[1]);assert.deepEqual(updated.videos,original.videos);assert.equal(fs.existsSync(marker),false,'copying must not run Codex');

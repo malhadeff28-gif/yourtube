@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),http=require('node:http'),{spawn}=require('node:child_process'),{setTimeout:delay}=require('node:timers/promises');
 const root=path.resolve(__dirname,'..');
 async function fixture(t){
@@ -31,7 +32,7 @@ const fs=require('node:fs');const url=decodeURIComponent(process.argv.at(-1)),id
  t.after(async()=>{if(child.exitCode===null&&child.signalCode===null){const done=new Promise(r=>child.once('exit',r));if(child.connected)child.disconnect();child.kill('SIGTERM');const timer=setTimeout(()=>child.kill('SIGKILL'),3000);await done;clearTimeout(timer)}fs.rmSync(dir,{recursive:true,force:true})});
  async function waitFor(fn){for(let i=0;i<600;i++){try{const v=await fn();if(v)return v}catch{}await delay(20)}throw Error('synthetic wait timed out')}
  await waitFor(async()=>(await fetch(base+'/feed.json')).ok);
- const post=(url,body)=>fetch(base+url,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(body)});
+ const post=async(url,body)=>fetch(base+url,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,body))});
  const status=()=>new Promise((resolve,reject)=>{const req=http.get(base+'/events',res=>{let txt='';res.on('data',c=>{txt+=c;const m=txt.match(/event: status\ndata: ([^\n]+)\n\n/);if(m){res.destroy();resolve(JSON.parse(m[1]))}});res.on('error',reject)});req.on('error',reject)});
  const setMode=x=>{fs.writeFileSync(mode,x);fs.writeFileSync(attempts,'')};const attemptsRead=()=>fs.existsSync(attempts)?fs.readFileSync(attempts,'utf8').trim().split('\n').filter(Boolean):[];
  let sequence=0;const append=async text=>{fs.appendFileSync(session,JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text}]}})+'\n');await new Promise((resolve,reject)=>{const id=++sequence,timer=setTimeout(()=>reject(Error('watch timeout')),3000),listener=m=>{if(m?.ack===id){clearTimeout(timer);child.off('message',listener);resolve()}};child.on('message',listener);child.send({kind:'watch',id})})};

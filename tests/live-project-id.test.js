@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -63,7 +64,7 @@ for (const exhaustion of [false, true]) test(`Live new-project allocation ${exha
   const base = `http://127.0.0.1:${port}`; const started = path.join(dir, 'started'); const release = path.join(dir, 'release');
   const child = spawn(process.execPath, ['server.js'], { cwd: root, env: { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH}`, YOURTUBE_PORT: String(port), YOURTUBE_SESSIONS_DIR: sessions, YOURTUBE_FEED: feed, YOURTUBE_CODEX: fake, YOURTUBE_DEBOUNCE_MS: '30', TEST_STARTED: started, TEST_RELEASE: release, NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require=${JSON.stringify(hook)}` }, stdio: 'ignore' });
   t.after(async () => { if (child.exitCode === null && child.signalCode === null) { const done = new Promise(resolve => child.once('exit', resolve)); child.kill('SIGTERM'); await done; } fs.rmSync(dir, { recursive: true, force: true }); });
-  const post = (endpoint, body) => fetch(base + endpoint, { method: 'POST', headers: { 'content-type': 'application/json', origin: base }, body: JSON.stringify(body) });
+  const post = async (endpoint, body) => fetch(base + endpoint, { method: 'POST', headers: { 'content-type': 'application/json', origin: base }, body: JSON.stringify(await fencedBody(base,body)) });
   await waitFor(async () => { try { return (await fetch(base + '/feed.json')).ok; } catch { return false; } }, 'server failed to start');
   assert.equal((await post('/api/live', { enabled: true })).status, 200);
   fs.appendFileSync(session, JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'A synthetic topic for a new project.' }] } }) + '\n');

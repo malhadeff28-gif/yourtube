@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const http=require('node:http');const {spawn}=require('node:child_process');const {setTimeout:delay}=require('node:timers/promises');
 const meta=o=>JSON.stringify({type:'session_meta',payload:{originator:o,source:'vscode',thread_source:'user'}})+'\n';const msg=text=>JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text}]}})+'\n';
 async function wait(f){for(let i=0;i<200;i++){if(await f())return;await delay(20)}throw Error('timeout')}
@@ -10,7 +11,7 @@ test('header changes between header validation and content read', {timeout:10000
  const socket=http.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));const base=`http://127.0.0.1:${port}`;
  const child=spawn(process.execPath,['server.js'],{cwd:path.resolve(__dirname,'..'),env:{...process.env,NODE_OPTIONS:`--require=${hook}`,YOURTUBE_PORT:String(port),YOURTUBE_SESSIONS_DIR:sessions,YOURTUBE_FEED:path.join(dir,'feed.json'),YOURTUBE_CODEX:fake,YOURTUBE_DEBOUNCE_MS:'30',TEST_FILE:file,TEST_GATE:gate,TEST_SWAPPED:swapped,TEST_MARKER:marker,TEST_REPLACEMENT:meta('Other Desktop')+msg('A non Desktop private synthetic message.')},stdio:'ignore'});
  t.after(async()=>{if(child.exitCode===null){const done=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true})});
- await wait(async()=>{try{return (await fetch(`${base}/feed.json`)).ok}catch{return false}});await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:'{"enabled":true}'});
+ await wait(async()=>{try{return (await fetch(`${base}/feed.json`)).ok}catch{return false}});await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled:true}))});
  fs.writeFileSync(gate,'yes');fs.appendFileSync(file,msg('A triggering desktop synthetic message that is long enough to ensure the replacement is fully read from the same file descriptor.'));await wait(()=>fs.existsSync(swapped));await delay(400);
  const observed=fs.existsSync(marker)?fs.readFileSync(marker,'utf8'):'';assert.doesNotMatch(observed,/non Desktop private synthetic message/,'content from a non Desktop session must not be sent');
 });
@@ -22,7 +23,7 @@ test('a concurrent append during validation is skipped, then later messages work
  const socket=http.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));const base=`http://127.0.0.1:${port}`;
  const child=spawn(process.execPath,['server.js'],{cwd:path.resolve(__dirname,'..'),env:{...process.env,NODE_OPTIONS:`--require=${hook}`,YOURTUBE_PORT:String(port),YOURTUBE_SESSIONS_DIR:sessions,YOURTUBE_FEED:path.join(dir,'feed.json'),YOURTUBE_CODEX:fake,YOURTUBE_DEBOUNCE_MS:'30',TEST_FILE:file,TEST_GATE:gate,TEST_APPENDED:appended,TEST_MARKER:marker,TEST_APPEND:msg('A concurrent synthetic Desktop append.')},stdio:'ignore'});
  t.after(async()=>{if(child.exitCode===null){const done=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true})});
- await wait(async()=>{try{return (await fetch(`${base}/feed.json`)).ok}catch{return false}});await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:'{"enabled":true}'});
+ await wait(async()=>{try{return (await fetch(`${base}/feed.json`)).ok}catch{return false}});await fetch(`${base}/api/live`,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled:true}))});
  fs.writeFileSync(gate,'yes');fs.appendFileSync(file,msg('A first synthetic Desktop triggering event.'));await wait(()=>fs.existsSync(appended));await delay(250);
  assert.equal(fs.existsSync(marker),false,'uncertain concurrent writes are baselined rather than processed');
  assert.equal((await status(base)).activityMayBeMissed,true,'discarded concurrent writes set a coarse warning');

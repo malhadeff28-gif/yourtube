@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),http=require('node:http');
@@ -15,7 +16,7 @@ const fs=require('node:fs');process.stdin.setEncoding('utf8');let prompt='';proc
  const socket=http.createServer();await new Promise(resolve=>socket.listen(0,'127.0.0.1',resolve));const port=socket.address().port;await new Promise(resolve=>socket.close(resolve));const base=`http://127.0.0.1:${port}`;
  const child=spawn(process.execPath,['server.js'],{cwd:path.resolve(__dirname,'..'),env:{...process.env,TMPDIR:dir,PATH:`${dir}${path.delimiter}${process.env.PATH}`,YOURTUBE_PORT:String(port),YOURTUBE_SESSIONS_DIR:sessions,YOURTUBE_FEED:feed,YOURTUBE_CODEX:fake,CALLS:path.join(dir,'calls'),RELEASE:path.join(dir,'release')},stdio:'ignore'});
  t.after(async()=>{if(child.exitCode===null&&child.signalCode===null){const done=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true})});
- const post=(url,body)=>fetch(base+url,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(body)});
+ const post=async(url,body)=>fetch(base+url,{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,body))});
  await waitFor(async()=>{try{return (await fetch(base+'/feed.json')).ok}catch{return false}},'server failed to start');
  const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222';
  assert.equal((await post('/api/manual-search',{id:a,query:'https://example.com'})).status,400);

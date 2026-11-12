@@ -16,14 +16,14 @@ test('enabling Live requires an explicit review and confirmation', async()=>{
  await tick();
  const click=id=>el(id).listeners.click();
  const submit=()=>el('live-consent-form').listeners.submit({preventDefault(){}});
- const status=enabled=>source.listeners.status({data:JSON.stringify({mode:enabled?'listening':'paused',enabled,message:'Synthetic status'})});
+ const status=enabled=>source.listeners.status({data:JSON.stringify({mode:enabled?'listening':'paused',enabled,controlInstance:'synthetic-instance',controlGeneration:7,message:'Synthetic status'})});
  click('live-toggle');assert.equal(el('live-consent').open,false,'unknown state must not enable');
  status(false);click('live-toggle');assert.equal(el('live-consent').open,true);assert.equal(requests.length,0);
  click('live-consent-cancel');submit();assert.equal(requests.length,0,'cancel must not enable');
  click('live-toggle');el('live-consent').close();submit();assert.equal(requests.length,0,'Escape/dismissal must not enable');
  click('live-toggle');status(true);assert.equal(el('live-consent').open,false,'external state change dismisses stale consent');submit();assert.equal(requests.length,0);
  status(false);click('live-toggle');source.onerror();submit();assert.equal(requests.length,0,'disconnect invalidates consent');
- status(false);click('live-toggle');submit();submit();await tick();assert.equal(requests.length,1);assert.equal(requests[0].url,'/api/live');assert.equal(requests[0].body.enabled,true);
+ status(false);click('live-toggle');submit();submit();await tick();assert.equal(requests.length,1);assert.equal(requests[0].url,'/api/live');assert.equal(requests[0].body.enabled,true);assert.equal(requests[0].body.automatic,true);assert.equal(requests[0].body.controlInstance,'synthetic-instance');assert.equal(requests[0].body.expectedGeneration,7);
  source.listeners.status({data:JSON.stringify({mode:'listening',enabled:true,activityMayBeMissed:true,message:'Synthetic status'})});assert.equal(el('watcher-warning').hidden,false,'missed-activity warning must be visible');
  source.listeners.status({data:JSON.stringify({mode:'curating',enabled:true,activityMayBeMissed:true,message:'Synthetic status'})});assert.equal(el('watcher-warning').hidden,false,'warning stays visible across other statuses');
  status(true);click('live-toggle');await tick();assert.equal(requests.length,2);assert.equal(requests[1].body.enabled,false,'pausing needs no confirmation');
@@ -31,7 +31,7 @@ test('enabling Live requires an explicit review and confirmation', async()=>{
  const html=fs.readFileSync(path.join(__dirname,'..','dist','index.html'),'utf8');
  assert.match(html,/Redaction can miss sensitive details; project IDs are sent unchanged/);
  assert.match(html,/Browser-only project edits are not included/);
- assert.match(html,/already been sent to Codex/);
+ assert.match(html,/automatically forms a general search/);assert.match(html,/There is no per-search approval/);
  const consent=html.match(/<dialog id="live-consent"[\s\S]*?<\/dialog>/)[0];
  const info=html.match(/<dialog id="info-dialog"[\s\S]*?<\/dialog>/)[0];
  assert.match(consent,/aria-describedby="live-consent-data live-consent-limits live-consent-search"/);
@@ -49,7 +49,7 @@ test('a hung enable request times out and a fresh status permits pause', async()
  let timeout;const requests=[];
  const sandbox={window:{},document:{getElementById:el,querySelectorAll:()=>[],createElement:()=>el('new')},localStorage:{getItem:()=>null,setItem(){}},EventSource:FakeEvents,AbortController,fetch:async(url,options)=>{if(url==='feed.json')return {ok:true,json:async()=>({contexts:[],videos:[],focusContext:'',contextSource:'Empty starter feed'})};const body=JSON.parse(options.body);requests.push(body);if(body.enabled)return new Promise((_resolve,reject)=>options.signal.addEventListener('abort',()=>reject(Error('aborted'))));return {ok:true}},setTimeout:(fn,ms)=>{if(ms===10000){timeout=fn;return 1}return 2},clearTimeout(){},URL,console};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','dist','app.js'),'utf8'),sandbox);await tick();
- const status=(eventSource,enabled)=>eventSource.listeners.status({data:JSON.stringify({mode:enabled?'listening':'paused',enabled,message:'Synthetic status'})});
+ const status=(eventSource,enabled)=>eventSource.listeners.status({data:JSON.stringify({mode:enabled?'listening':'paused',enabled,controlInstance:'synthetic-instance',controlGeneration:7,message:'Synthetic status'})});
  const click=id=>el(id).listeners.click();
  status(source,false);click('live-toggle');el('live-consent-form').listeners.submit({preventDefault(){}});assert.equal(requests.length,1);assert.equal(requests[0].expectedEnabled,false);
  const oldSource=source;status(oldSource,true);click('live-toggle');assert.equal(requests.length,1,'do not issue a concurrent toggle while the enable result is unknown');

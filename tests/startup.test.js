@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -52,7 +53,7 @@ async function setLive(url, enabled, origin = url) {
   return fetch(`${url}/api/live`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', origin },
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify(await fencedBody(url,{ enabled })),
   });
 }
 
@@ -119,7 +120,7 @@ test('fresh startup, consent, pause, and restart', { timeout: 15000 }, async t =
   assert.deepEqual(initial.contexts, []);
   assert.deepEqual(initial.videos, []);
   assert.equal((await readStatus(url)).mode, 'paused');
-  const stale = await fetch(`${url}/api/live`, { method:'POST', headers:{'content-type':'application/json',origin:url}, body:JSON.stringify({enabled:true,expectedEnabled:true}) });
+  const stale = await fetch(`${url}/api/live`, { method:'POST', headers:{'content-type':'application/json',origin:url}, body:JSON.stringify(await fencedBody(url,{enabled:true,expectedEnabled:true})) });
   assert.equal(stale.status,409,'a stale expected state must not enable Live');
   assert.equal((await readStatus(url)).mode, 'paused');
   const demo = await (await fetch(`${url}/demo.html`)).text();

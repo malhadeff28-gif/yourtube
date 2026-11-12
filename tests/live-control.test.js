@@ -24,7 +24,7 @@ test('Live control uses fresh status and recovers after errors and timeouts', as
   class FakeEvents {
     constructor() { source=this; this.listeners={}; this.closed=false; }
     addEventListener(type, fn) { this.listeners[type]=fn; }
-    status(value) { this.listeners.status({data:typeof value==='string'?value:JSON.stringify(value)}); }
+    status(value) { this.listeners.status({data:typeof value==='string'?value:JSON.stringify({controlInstance:'synthetic-instance',controlGeneration:7,...value})}); }
     disconnect() { this.onerror(); }
     close() { this.closed=true; }
   }
@@ -50,7 +50,7 @@ test('Live control uses fresh status and recovers after errors and timeouts', as
   assert.equal(element('live-consent').open,true,'enabling must first show disclosure');
   assert.equal(requests.length,0);
   element('live-consent-form').listeners.submit({preventDefault(){}});
-  assert.deepEqual(requests,[{enabled:true,expectedEnabled:false}]);
+  assert.deepEqual(requests,[{enabled:true,expectedEnabled:false,automatic:true,controlInstance:'synthetic-instance',expectedGeneration:7}]);
   assert.equal(toggle.disabled,true);
   await toggle.listeners.click();
   assert.equal(requests.length,1,'rapid clicks must not send duplicate requests');

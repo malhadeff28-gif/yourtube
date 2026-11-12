@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -40,7 +41,7 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   t.after(async () => { if(child.exitCode===null){const done=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await done}fs.rmSync(dir,{recursive:true,force:true}) });
   async function waitFor(fn) { for(let i=0;i<200;i++){const value=await fn();if(value)return value;await delay(25)}throw Error('timed out') }
   await waitFor(async()=>{try{return (await fetch(`${base}/feed.json`)).ok}catch{return false}});
-  const post = (endpoint, value, origin=base) => fetch(`${base}${endpoint}`, { method:'POST', headers:{'content-type':'application/json',origin}, body:JSON.stringify(value) });
+  const post = async (endpoint, value, origin=base) => fetch(`${base}${endpoint}`, { method:'POST', headers:{'content-type':'application/json',origin}, body:JSON.stringify(await fencedBody(base,value)) });
   const status = () => new Promise((resolve,reject)=>{const req=http.get(`${base}/events`,res=>{let text='';res.on('data',chunk=>{text+=chunk;const match=text.match(/event: status\ndata: ([^\n]+)\n\n/);if(match){res.destroy();resolve(JSON.parse(match[1]))}});res.on('error',reject)});req.on('error',reject)});
   await post('/api/live',{enabled:true});
   fs.appendFileSync(session,JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'A synthetic message about studying a topic.'}]}})+'\n');

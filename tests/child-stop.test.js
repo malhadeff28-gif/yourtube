@@ -1,4 +1,5 @@
 'use strict';
+const { fencedBody } = require('./support/live-control');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -40,7 +41,7 @@ const fs=require('node:fs');process.on('SIGTERM',()=>{});process.stdin.resume();
     fs.rmSync(dir,{recursive:true,force:true});
   });
   await waitFor(async()=>{try{return (await fetch(base+'/feed.json')).ok}catch{return false}},'server failed to start');
-  const setLive=enabled=>fetch(base+'/api/live',{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify({enabled})});
+  const setLive=async enabled=>fetch(base+'/api/live',{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled}))});
   assert.equal((await setLive(true)).status,200);
   fs.appendFileSync(session,userEvent('A synthetic topic to exercise an unresponsive fake process.'));
   await waitFor(()=>fs.existsSync(marker),'fake Codex did not start');
@@ -82,7 +83,7 @@ const fs=require('node:fs');process.on('SIGTERM',()=>{});process.stdin.resume();
     fs.rmSync(dir,{recursive:true,force:true});
   });
   await waitFor(async()=>{try{return (await fetch(base+'/feed.json')).ok}catch{return false}},'server failed to start');
-  assert.equal((await fetch(base+'/api/live',{method:'POST',headers:{'content-type':'application/json',origin:base},body:'{"enabled":true}'})).status,200);
+  assert.equal((await fetch(base+'/api/live',{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled:true}))})).status,200);
   fs.appendFileSync(session,userEvent('A synthetic topic for the fake Codex timeout check.'));
   await waitFor(()=>fs.existsSync(marker),'fake Codex did not start');
   pid=Number(fs.readFileSync(marker,'utf8'));assert.ok(alive(pid));
@@ -115,7 +116,7 @@ process.stdin.resume();process.stdin.on('end',()=>{fs.appendFileSync(process.env
   });
   async function status(){return new Promise((resolve,reject)=>{const req=http.get(base+'/events',res=>{let body='';res.on('data',part=>{body+=part;const m=body.match(/event: status\ndata: ([^\n]+)\n\n/);if(m){res.destroy();resolve(JSON.parse(m[1]))}});res.on('error',reject)});req.on('error',reject);req.setTimeout(3000,()=>req.destroy(Error('status timeout')))})}
   await waitFor(async()=>{try{return (await fetch(base+'/feed.json')).ok}catch{return false}},'server failed to start');
-  assert.equal((await fetch(base+'/api/live',{method:'POST',headers:{'content-type':'application/json',origin:base},body:'{"enabled":true}'})).status,200);
+  assert.equal((await fetch(base+'/api/live',{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify(await fencedBody(base,{enabled:true}))})).status,200);
   fs.appendFileSync(session,userEvent('A synthetic topic for the expired output check.'));
   await waitFor(()=>fs.existsSync(marker),'fake Codex did not start');
   await waitFor(async()=>{const current=await status();return current.mode==='error'&&/timed out/i.test(current.message)},'timed-out response was not rejected');

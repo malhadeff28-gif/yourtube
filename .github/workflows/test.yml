@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: '24'
       - name: Test startup and privacy controls
-        run: node --test tests/*.test.js
+        run: node --test --test-concurrency=1 tests/*.test.js
       - name: Validate starter feed
         run: python3 scripts/validate_feed.py dist/feed.example.json
       - name: Run illustrative relevance evaluation
