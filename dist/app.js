@@ -16,6 +16,34 @@ function validFeed(data){
   &&data.videos.every(v=>record(v)&&typeof v.id==='string'&&typeof v.context==='string'&&['title','channel','reason','source'].every(key=>optionalText(v,key)))
   &&['focusContext','contextSource','updatedAt'].every(key=>optionalText(data,key));
 }
+function initializeBrowserStateExport(){
+ const $=id=>document.getElementById(id),KEY='yourtube.state.v1';
+// This export is an explicit opaque snapshot of one browser key. It does not
+// parse, repair, write, or send the stored data and is available when blocked.
+const BROWSER_EXPORT_MAX_BYTES=2*1024*1024;
+let browserExportSnapshot=null;
+function clearBrowserExport(){browserExportSnapshot=null;$('browser-state-export-preview').value='';$('browser-state-export-status').textContent='';$('browser-state-export-download').disabled=true;$('browser-state-export-reveal').disabled=false}
+$('browser-state-export-open').addEventListener('click',()=>{if($('browser-state-export-dialog').open)return;clearBrowserExport();$('browser-state-export-dialog').showModal()});
+$('browser-state-export-dialog').addEventListener('close',clearBrowserExport);
+$('browser-state-export-reveal').addEventListener('click',()=>{
+ if(!$('browser-state-export-dialog').open||browserExportSnapshot!==null)return;
+ let raw;try{raw=localStorage.getItem(KEY)}catch{$('browser-state-export-status').textContent='Browser data could not be read. No snapshot was created.';return}
+ if(raw===null){$('browser-state-export-status').textContent='No browser data is stored under this key. No snapshot was created.';return}
+ if(raw.length>BROWSER_EXPORT_MAX_BYTES){$('browser-state-export-status').textContent='Browser data exceeds the 2 MiB export limit. Nothing was truncated or exported.';return}
+ const snapshot=JSON.stringify({format:'yourtube-browser-state-snapshot',version:1,storageKey:KEY,raw});
+ let byteLength;try{byteLength=new Blob([snapshot],{type:'application/json;charset=utf-8'}).size}catch{$('browser-state-export-status').textContent='Could not prepare the snapshot. No data was exported.';return}
+ if(byteLength>BROWSER_EXPORT_MAX_BYTES){$('browser-state-export-status').textContent='Browser data exceeds the 2 MiB export limit. Nothing was truncated or exported.';return}
+ browserExportSnapshot=snapshot;$('browser-state-export-preview').value=snapshot;$('browser-state-export-download').disabled=false;$('browser-state-export-reveal').disabled=true;$('browser-state-export-status').textContent='Snapshot captured in this tab. It does not update if browser data changes. Review it before sharing.';
+});
+$('browser-state-export-download').addEventListener('click',()=>{
+ if(!$('browser-state-export-dialog').open||browserExportSnapshot===null||$('browser-state-export-download').disabled)return;
+ if($('browser-state-export-preview').value!==browserExportSnapshot){$('browser-state-export-status').textContent='Preview changed. Close and reveal a new snapshot before downloading.';return}
+ let url;try{url=URL.createObjectURL(new Blob([browserExportSnapshot],{type:'application/json;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='yourtube-browser-state-snapshot.json';document.body.appendChild(link);link.click();link.remove();$('browser-state-export-status').textContent='Download started. The file is unencrypted; review it before sharing.'}catch{$('browser-state-export-status').textContent='Could not start download. You can copy the preview instead.'}finally{if(url)setTimeout(()=>URL.revokeObjectURL(url),1000)}
+});
+ $('browser-state-export-close').addEventListener('click',()=>$('browser-state-export-dialog').close());
+ $('browser-state-export-close-action').addEventListener('click',()=>$('browser-state-export-dialog').close());
+}
+initializeBrowserStateExport();
 async function start(){
  startupFailed=false;
  const loadFeed = async signal => {const response = await fetch('feed.json', {cache:'no-store',signal}); if(!response.ok) throw new Error('Feed unavailable'); const data=await response.json();if(!validFeed(data))throw new Error('Invalid feed');return data;};
@@ -144,7 +172,7 @@ $('grid').addEventListener('click',async e=>{
  if(hide&&confirm('Remove this video from your feed?')){const id=hide.dataset.hide,next={...state,hiddenVideos:[...state.hiddenVideos.filter(x=>x!==id),id],saved:state.saved.filter(x=>x!==id),removedVideos:[...state.removedVideos.filter(x=>x.id!==id),{id,saved:state.saved.includes(id)}]},result=await persist(next);if(result.ok){render();reportDeletion('Video removed. Use Recently removed to restore it.')}else reportDeletion(result.error)}
 });
 $('player-dialog').addEventListener('close',()=>$('player').replaceChildren());
-document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$(button.dataset.close).close()));
+document.querySelectorAll('[data-close]').forEach(button=>{if(button.dataset.close!=='browser-state-export-dialog')button.addEventListener('click',()=>$(button.dataset.close).close())});
 let contextDialogGeneration=0;const deferredDeletionNotices=[],pendingDeletions=new Set(),uncertainDeletions=new Set();
 function contextSaveBlock(id){if(stateUntrusted)return 'Browser data cannot be safely accessed. Copy your draft and reload before editing.';if(projectMasked(id))return 'This project is hidden while browser data cannot be safely resolved.';if(pendingDeletions.has(id))return 'Deletion is in progress. Your draft is still here; wait for the result.';if(uncertainDeletions.has(id))return 'Could not confirm project deletion. Copy your draft and reload to check before saving.';if(state.deletedContexts.includes(id))return 'This project was deleted. Copy your draft, then add a new project to save it.';return ''}
 function reportDeletion(message){if(document.querySelector('dialog[open]'))deferredDeletionNotices.push(message);else toast([...deferredDeletionNotices.splice(0),message].join(' '))}
@@ -205,28 +233,6 @@ function openContext(isNew=false,selectedId=null){
 $('context-choose-form').addEventListener('submit',e=>{e.preventDefault();const id=$('context-choose-select').value,project=contexts().find(c=>c.id===id);if(!id||!project){$('context-choose-error').textContent='Choose an available project.';return}const blocked=contextSaveBlock(id);if(blocked){$('context-choose-error').textContent=blocked;return}$('context-choose-dialog').close();openContext(false,id)});
 // Export exactly the visible preview on explicit request. This is not a backup.
 function refreshProjectExport(){const id=$('project-export-select').value,project=contexts().find(c=>c.id===id);if(!project||pendingDeletions.has(id)||uncertainDeletions.has(id)||storageBlocked){$('project-export-preview').value='';$('project-export-status').textContent='This project is unavailable. Close and reopen the export.';$('project-export-download').disabled=true;return}const items=videos().filter(v=>v.context===id),valid=items.filter(v=>/^[A-Za-z0-9_-]{11}$/.test(v.id));const line=value=>String(value||'').replace(/[\r\n]+/g,' ').trim();$('project-export-preview').value=['YourTube project: '+line(project.name),'',...valid.flatMap(v=>{const note=$('project-export-notes').checked&&state.videoNotes.find(n=>n.id===v.id&&n.context===id);return ['- '+(line(v.title)||v.id)+(line(v.channel)?' — '+line(v.channel):''),'  https://www.youtube.com/watch?v='+v.id,...(note?['  Personal note:',...note.text.split('\n').map(part=>'    '+part)]:[])]})].join('\n')+'\n';$('project-export-status').textContent=valid.length+' video'+(valid.length===1?'':'s')+(valid.length!==items.length?'; '+(items.length-valid.length)+' with invalid IDs omitted.':'.');$('project-export-download').disabled=false}
-// This export is an explicit opaque snapshot of one browser key. It does not
-// parse, repair, write, or send the stored data and is available when blocked.
-const BROWSER_EXPORT_MAX_BYTES=2*1024*1024;
-let browserExportSnapshot=null;
-function clearBrowserExport(){browserExportSnapshot=null;$('browser-state-export-preview').value='';$('browser-state-export-status').textContent='';$('browser-state-export-download').disabled=true;$('browser-state-export-reveal').disabled=false}
-$('browser-state-export-open').addEventListener('click',()=>{if($('browser-state-export-dialog').open)return;clearBrowserExport();$('browser-state-export-dialog').showModal()});
-$('browser-state-export-dialog').addEventListener('close',clearBrowserExport);
-$('browser-state-export-reveal').addEventListener('click',()=>{
- if(!$('browser-state-export-dialog').open||browserExportSnapshot!==null)return;
- let raw;try{raw=localStorage.getItem(KEY)}catch{$('browser-state-export-status').textContent='Browser data could not be read. No snapshot was created.';return}
- if(raw===null){$('browser-state-export-status').textContent='No browser data is stored under this key. No snapshot was created.';return}
- if(raw.length>BROWSER_EXPORT_MAX_BYTES){$('browser-state-export-status').textContent='Browser data exceeds the 2 MiB export limit. Nothing was truncated or exported.';return}
- const snapshot=JSON.stringify({format:'yourtube-browser-state-snapshot',version:1,storageKey:KEY,raw});
- let byteLength;try{byteLength=new Blob([snapshot],{type:'application/json;charset=utf-8'}).size}catch{$('browser-state-export-status').textContent='Could not prepare the snapshot. No data was exported.';return}
- if(byteLength>BROWSER_EXPORT_MAX_BYTES){$('browser-state-export-status').textContent='Browser data exceeds the 2 MiB export limit. Nothing was truncated or exported.';return}
- browserExportSnapshot=snapshot;$('browser-state-export-preview').value=snapshot;$('browser-state-export-download').disabled=false;$('browser-state-export-reveal').disabled=true;$('browser-state-export-status').textContent='Snapshot captured in this tab. It does not update if browser data changes. Review it before sharing.';
-});
-$('browser-state-export-download').addEventListener('click',()=>{
- if(!$('browser-state-export-dialog').open||browserExportSnapshot===null||$('browser-state-export-download').disabled)return;
- if($('browser-state-export-preview').value!==browserExportSnapshot){$('browser-state-export-status').textContent='Preview changed. Close and reveal a new snapshot before downloading.';return}
- let url;try{url=URL.createObjectURL(new Blob([browserExportSnapshot],{type:'application/json;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='yourtube-browser-state-snapshot.json';document.body.appendChild(link);link.click();link.remove();$('browser-state-export-status').textContent='Download started. The file is unencrypted; review it before sharing.'}catch{$('browser-state-export-status').textContent='Could not start download. You can copy the preview instead.'}finally{if(url)setTimeout(()=>URL.revokeObjectURL(url),1000)}
-});
 $('project-export-open').addEventListener('click',()=>{if(storageBlocked){toast('Browser data is unavailable or unresolved. Resolve it before exporting.');return}const projects=contexts();if(!projects.length){toast('Add a project before exporting.');return}$('project-export-select').innerHTML=projects.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');$('project-export-select').value=projects.some(c=>c.id===active)?active:projects[0].id;$('project-export-notes').checked=false;refreshProjectExport();$('project-export-dialog').showModal()});
 $('project-export-select').addEventListener('change',()=>{$('project-export-notes').checked=false;refreshProjectExport()});
 $('project-export-notes').addEventListener('change',refreshProjectExport);
