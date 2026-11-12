@@ -173,3 +173,25 @@ test('duplicate same-ID Live projects make the destination ambiguous',async()=>{
 test('project review renders untrusted names safely and keeps details local',async()=>{
  const a=await app();paused(a);const original=a.getFeed();a.setFeed({...original,contexts:[{id:'a',name:'Synthetic <img src=x>',task:'Example & task'}]});open(a);assert.match(a.el('manual-search-project').innerHTML,/&lt;img src=x&gt;/);assert.doesNotMatch(a.el('manual-search-project').innerHTML,/<img src=x>/);a.el('manual-search-project').listeners.change();assert.match(a.el('manual-search-project-details').textContent,/Synthetic <img src=x>/);assert.equal(a.calls.length,0,'opening and reviewing project details sends no request');
 });
+
+test('verification warnings survive repeated ready status without losing selection',async()=>{
+ const a=await app();paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;
+ paused(a,{id,state:'ready',videos:[video],verificationIncomplete:true});assert.match(a.el('manual-search-status').textContent,/Some candidates could not be verified; results may be incomplete/);choose(a,video.id);const options=a.el('manual-search-options').innerHTML;
+ paused(a,{id,state:'ready',videos:[video],verificationIncomplete:true});assert.equal(a.el('manual-search-options').innerHTML,options);assert.equal(a.el('manual-search-save').disabled,false);assert.match(a.el('manual-search-status').textContent,/Some candidates could not be verified/);
+ await a.el('manual-search-save').listeners.click();assert.equal(JSON.parse(a.getRaw()).customVideos[0].id,video.id);
+});
+test('manual search distinguishes no candidates from unverified without displaying arbitrary reasons',async()=>{
+ for(const [reason,expected] of [['verification-incomplete',/Could not verify candidates; try again/],['no-candidates',/No video candidates found/],['SYNTHETIC_PRIVATE_ERROR',/Search failed/]]){
+  const a=await app();paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;paused(a,{id,state:'error',reason});assert.match(a.el('manual-search-status').textContent,expected);assert.doesNotMatch(a.el('manual-search-status').textContent,/SYNTHETIC_PRIVATE_ERROR/);assert.equal(a.getRaw(),null);
+ }
+});
+
+test('Live incomplete-verification notice follows the coarse status flag',async()=>{
+ const a=await app();a.events.status({mode:'listening',enabled:true,message:'Synthetic',verificationMayBeIncomplete:true});assert.equal(a.el('verification-warning').hidden,false);
+ a.events.status({mode:'listening',enabled:true,message:'Later synthetic status',verificationMayBeIncomplete:true});assert.equal(a.el('verification-warning').hidden,false);
+ a.events.status({mode:'paused',enabled:false,message:'Paused',verificationMayBeIncomplete:false});assert.equal(a.el('verification-warning').hidden,true);
+});
+
+test('invalid partial-verification flags fail closed without exposing results',async()=>{
+ const a=await app();paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;paused(a,{id,state:'ready',videos:[video],verificationIncomplete:'false'});assert.match(a.el('manual-search-status').textContent,/invalid results/);assert.equal(a.el('manual-search-options').innerHTML,'');assert.equal(a.getRaw(),null);
+});
