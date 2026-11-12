@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Connect the YourTube extension</title><link rel="stylesheet" href="/extension-setup.css"></head>
+<body><main><h1>Connect the YourTube extension</h1>
+<p>This independent extension shows your local recommendations in a panel on youtube.com. It is not affiliated with YouTube.</p>
+<p>Live reads new messages from local Codex Desktop chats. A short excerpt and stored project names and tasks are sent to Codex after best-effort redaction, which can miss sensitive details. When you enable Live, it automatically generates a general search that may be sent to web search providers. This uses your Codex allowance. YouTube receives IDs for metadata checks and when you open a video.</p>
+<p>The connection key gives the extension access to video titles, channels, IDs and the ability to pause Live. Keep it private; do not paste it into a website or chat. The key stays on this Mac. A separate random profile marker is saved in this browser to confirm that the panel sees the same browser storage. The extension does not receive your chat text or project names. Forgetting the key in the extension removes only that browser's copy; revoke it here to invalidate all copies.</p>
+<button id="reveal" type="button">Reveal connection key</button>
+<section id="pair-result" hidden><label for="pair-key">Connection key</label><input id="pair-key" type="password" readonly autocomplete="off" spellcheck="false"><button id="copy" type="button">Copy key</button><p>Paste this key into the extension’s connection settings.</p></section>
+<p><button id="revoke" type="button">Revoke connection key</button></p><p id="status" role="status"></p><p><a href="/">Open YourTube to enable or pause Live</a></p>
+</main><script src="/extension-setup.js" defer></script></body></html>

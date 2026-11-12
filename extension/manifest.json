@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "YourTube — local recommendations",
+  "version": "0.1.0",
+  "description": "Shows your local YourTube recommendations on YouTube after you enable it.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvFPnzFFj3Y4VNbzwDMm0nTORVTtXtgefeLz9IXyWsJpGZ8XhWQTQo9p65ePsyeGePwDDGmNFPYWk+L+HxYM7jIzYa9lF5c9oHO2GGtS4IEXZE2DRNhs8oP6P0BNDCmIGpU4u3NWM78pqKwyjhKjwyx85WF8SHtG/9NXxOasRxcZC35jFjsNibBKUQUyDm+f5b+HSoY4IR0SnucJMKZaTzVleMO52/+CAKt/62VVJEelMzmmzneIUAQsE5iIzly+19LjLEnDj9ueYYlpJNlDCTkvJNObjIdxJhQg6GMmpTSyYFOJJkosnmdwDIdGvx2ezvi/MkKNHzwZVvpiDMNz8HwIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "offscreen"],
+  "host_permissions": ["http://127.0.0.1:8765/*", "https://www.youtube.com/*", "https://youtube.com/*"],
+  "background": {"service_worker": "worker.js"},
+  "action": {"default_title": "YourTube settings", "default_popup": "popup.html"},
+  "content_scripts": [{
+    "matches": ["https://www.youtube.com/*", "https://youtube.com/*"],
+    "js": ["content.js"],
+    "css": ["content.css"],
+    "run_at": "document_idle"
+  }],
+  "web_accessible_resources": [{
+    "resources": ["panel.html"],
+    "matches": ["https://www.youtube.com/*", "https://youtube.com/*"]
+  }],
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'self'; frame-src http://127.0.0.1:8765; base-uri 'none'"}
+}
