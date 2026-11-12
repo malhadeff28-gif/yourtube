@@ -12,7 +12,7 @@ async function app(initialRaw=null){
  const locks={request:async(_key,_opts,fn)=>{if(locked)return fn(null);locked=true;try{if(blockedLock){const gate=blockedLock;blockedLock=null;await gate}return await fn({})}finally{locked=false}}};
  const context={window:{},document:{getElementById:el,querySelectorAll:()=>[],createElement:()=>el('new')},localStorage:{getItem:()=>raw,setItem:(_key,value)=>{raw=value}},navigator:{locks},EventSource:FakeEvents,fetch,crypto:{randomUUID:()=>id},setTimeout:setTimer,clearTimeout:key=>timers.delete(key),AbortController,URL,console};
  vm.runInNewContext(fs.readFileSync(path.join(root,'dist/app.js'),'utf8'),context);await tick();
- return {el,events,calls,timers,deferLock(){let release;blockedLock=new Promise(resolve=>{release=resolve});return release},getRaw:()=>raw,setRaw:value=>{raw=value},startResolve:value=>startResolve(value),cancelResolve:value=>cancelResolve(value),timeout(){const timer=[...timers.values()].find(x=>x.ms===10000);assert.ok(timer,'bounded request timeout');timer.fn()}};
+ return {el,events,calls,timers,deferLock(){let release;blockedLock=new Promise(resolve=>{release=resolve});return release},getRaw:()=>raw,setRaw:value=>{raw=value},setFeed:value=>{context.window.SEED=value},getFeed:()=>context.window.SEED,startResolve:value=>startResolve(value),cancelResolve:value=>cancelResolve(value),timeout(){const timer=[...timers.values()].find(x=>x.ms===10000);assert.ok(timer,'bounded request timeout');timer.fn()}};
 }
 function paused(a,manualSearch){a.events.status({mode:'paused',enabled:false,message:'Paused',...(manualSearch?{manualSearch}:{})})}
 function open(a,project='a'){a.el('manual-search-open').listeners.click();a.el('manual-search-project').value=project;a.el('manual-search-query').value='public topic'}
@@ -128,4 +128,48 @@ test('discard removes preview links immediately and ignores ready events while c
  const cancel=a.el('manual-search-stop').listeners.click();assert.equal(a.el('manual-search-options').innerHTML,'');assert.equal(a.el('manual-search-results').hidden,true);assert.equal(a.el('manual-search-save').disabled,true);
  paused(a,{id,state:'ready',videos:[video]});assert.equal(a.el('manual-search-options').innerHTML,'','old ready status cannot restore links during cancel');assert.equal(a.el('manual-search-results').hidden,true);
  a.cancelResolve({ok:true});await cancel;assert.equal(a.el('manual-search-options').innerHTML,'','accepted cancellation does not restore links');paused(a,{id,state:'ready',videos:[video]});assert.equal(a.el('manual-search-options').innerHTML,'','late ready status after the response cannot restore links before confirmation');assert.equal(a.el('manual-search-results').hidden,true);assert.match(a.el('manual-search-status').textContent,/Waiting for cancellation confirmation/);paused(a,{id,state:'canceled'});assert.equal(a.el('manual-search-options').innerHTML,'');assert.match(a.el('manual-search-status').textContent,/canceled|discarded/i);
+});
+
+
+test('manual search requires a freshly displayed project after underlying changes',async()=>{
+ const a=await app(JSON.stringify({contextEdits:{a:{name:'Browser overlay',task:'My task'}}}));paused(a);open(a);const original=a.getFeed();
+ a.setFeed({...original,contexts:[{id:'a',name:'Changed Live project',task:'Example'}]});
+ await submit(a);assert.equal(a.calls.length,0,'a changed Live target cannot start a search');assert.equal(a.el('manual-search-query').value,'public topic');assert.match(a.el('manual-search-status').textContent,/changed.*Refresh projects/i);
+ a.el('manual-search-refresh-projects').listeners.click();assert.equal(a.el('manual-search-project').value,'','refresh requires deliberate selection');assert.equal(a.el('manual-search-query').value,'public topic','the public phrase is preserved');assert.match(a.el('manual-search-project').innerHTML,/stored Live: Changed Live project — Example/,'the changed underlying project is visible before choosing');
+ a.el('manual-search-project').value='a';a.el('manual-search-project').listeners.change();assert.match(a.el('manual-search-project-details').textContent,/Selected browser project: Browser overlay — My task\. Stored Live project: Changed Live project — Example\./,'overlay and underlying details are both visible');const start=submit(a);assert.equal(a.calls.length,1);a.startResolve({ok:true});await start;paused(a,{id,state:'ready',videos:[video]});choose(a,video.id);
+ a.setFeed({...original,contexts:[{id:'a',name:'Replaced project',task:'Other'}]});await a.el('manual-search-save').listeners.click();assert.equal(JSON.parse(a.getRaw()).customVideos,undefined);assert.match(a.el('manual-search-status').textContent,/changed.*Refresh projects/i);assert.equal(a.el('manual-search-count').textContent,'1 of 1 selected','selected videos stay selected');
+ a.el('manual-search-refresh-projects').listeners.click();assert.match(a.el('manual-search-project').innerHTML,/stored Live: Replaced project — Other/);a.el('manual-search-project').value='a';a.el('manual-search-project').listeners.change();assert.match(a.el('manual-search-project-details').textContent,/Stored Live project: Replaced project — Other/);await a.el('manual-search-save').listeners.click();assert.equal(JSON.parse(a.getRaw()).customVideos[0].context,'a');
+});
+
+test('manual search rechecks project identity inside the storage lock and preserves results',async()=>{
+ const a=await app();paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;paused(a,{id,state:'ready',videos:[video]});choose(a,video.id);
+ const release=a.deferLock(),saving=a.el('manual-search-save').listeners.click(),original=a.getFeed();a.setFeed({...original,contexts:[{id:'a',name:'A new project',task:'Different'}]});release();await saving;
+ assert.equal(a.getRaw(),null,'the old selection cannot commit against a changed project');assert.match(a.el('manual-search-status').textContent,/changed.*Refresh projects/i);assert.equal(a.el('manual-search-count').textContent,'1 of 1 selected');assert.equal(a.el('manual-search-dialog').open,true);
+});
+
+test('same-ID Live and browser projects are rejected as ambiguous',async()=>{
+ const initial=JSON.stringify({customContexts:[{id:'a',name:'Local duplicate',task:'Other'}]});const a=await app(initial);paused(a);open(a);assert.match(a.el('manual-search-project').innerHTML,/ambiguous/);await submit(a);assert.equal(a.calls.length,0);assert.match(a.el('manual-search-status').textContent,/ambiguous/i);assert.equal(a.getRaw(),initial);
+});
+
+test('a feed refresh for an unrelated project does not block the selected target',async()=>{
+ const a=await app();paused(a);open(a);const original=a.getFeed();a.setFeed({...original,contexts:[...original.contexts,{id:'b',name:'Unrelated',task:'Other'}]});const pending=submit(a);assert.equal(a.calls.length,1);a.startResolve({ok:true});await pending;paused(a,{id,state:'ready',videos:[video]});choose(a,video.id);await a.el('manual-search-save').listeners.click();assert.equal(JSON.parse(a.getRaw()).customVideos[0].context,'a');
+});
+
+
+test('a selected project removed while starting a search cannot trigger the request',async()=>{
+ const a=await app();paused(a);open(a);const release=a.deferLock(),pending=submit(a),original=a.getFeed();a.setFeed({...original,contexts:[]});release();await pending;
+ assert.equal(a.calls.length,0,'a deleted target cannot start a manual search');assert.equal(a.el('manual-search-query').value,'public topic');assert.match(a.el('manual-search-status').textContent,/no longer available/i);assert.equal(a.el('manual-search-dialog').open,true);
+ a.el('manual-search-refresh-projects').listeners.click();assert.equal(a.el('manual-search-project').value,'');assert.equal(a.el('manual-search-query').value,'public topic');
+});
+
+test('duplicate same-ID Live projects make the destination ambiguous',async()=>{
+ const a=await app();paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;paused(a,{id,state:'ready',videos:[video]});choose(a,video.id);
+ const original=a.getFeed();a.setFeed({...original,contexts:[...original.contexts,{...original.contexts[0],name:'Second Live record'}]});await a.el('manual-search-save').listeners.click();
+ assert.equal(a.getRaw(),null);assert.match(a.el('manual-search-status').textContent,/ambiguous/i);assert.equal(a.el('manual-search-count').textContent,'1 of 1 selected');
+ a.el('manual-search-refresh-projects').listeners.click();assert.match(a.el('manual-search-project').innerHTML,/disabled.*ambiguous/i);assert.equal(a.el('manual-search-project').value,'');
+});
+
+
+test('project review renders untrusted names safely and keeps details local',async()=>{
+ const a=await app();paused(a);const original=a.getFeed();a.setFeed({...original,contexts:[{id:'a',name:'Synthetic <img src=x>',task:'Example & task'}]});open(a);assert.match(a.el('manual-search-project').innerHTML,/&lt;img src=x&gt;/);assert.doesNotMatch(a.el('manual-search-project').innerHTML,/<img src=x>/);a.el('manual-search-project').listeners.change();assert.match(a.el('manual-search-project-details').textContent,/Synthetic <img src=x>/);assert.equal(a.calls.length,0,'opening and reviewing project details sends no request');
 });
