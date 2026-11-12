@@ -12,7 +12,7 @@ The idea: turn the context in an ongoing work session into a useful starting poi
 
 While Live is enabled, YourTube normally waits for 12 seconds of quiet before processing queued chat activity. Continuous activity no longer postpones a pending batch indefinitely: after 60 seconds the batch becomes eligible, although an already-running job must finish first. This can trigger Codex processing during sustained activity and consume your account allowance. Queue limits and other watcher limitations still apply; this does not guarantee message delivery or recommendation quality.
 
-This prototype is local software, not a hosted product or a YouTube integration. It depends on an installed, signed-in Codex CLI, web search, YouTube, and the current local Codex Desktop chat format. Those integrations may change. Video metadata verification does not verify the content or its relevance.
+This prototype is local software, not a hosted product or a YouTube integration. It depends on an installed, signed-in Codex CLI, web search, YouTube, and the current local Codex Desktop chat format. Those integrations may change. Video metadata verification does not verify the content or its relevance. If some candidates cannot be verified, YourTube keeps only verified results and warns that they may be incomplete; it cannot determine why verification failed.
 
 ## Run locally
 

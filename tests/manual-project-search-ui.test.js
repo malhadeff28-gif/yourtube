@@ -129,3 +129,25 @@ test('discard removes preview links immediately and ignores ready events while c
  paused(a,{id,state:'ready',videos:[video]});assert.equal(a.el('manual-search-options').innerHTML,'','old ready status cannot restore links during cancel');assert.equal(a.el('manual-search-results').hidden,true);
  a.cancelResolve({ok:true});await cancel;assert.equal(a.el('manual-search-options').innerHTML,'','accepted cancellation does not restore links');paused(a,{id,state:'ready',videos:[video]});assert.equal(a.el('manual-search-options').innerHTML,'','late ready status after the response cannot restore links before confirmation');assert.equal(a.el('manual-search-results').hidden,true);assert.match(a.el('manual-search-status').textContent,/Waiting for cancellation confirmation/);paused(a,{id,state:'canceled'});assert.equal(a.el('manual-search-options').innerHTML,'');assert.match(a.el('manual-search-status').textContent,/canceled|discarded/i);
 });
+
+test('verification warnings survive repeated ready status without losing selection',async()=>{
+ const a=await app();paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;
+ paused(a,{id,state:'ready',videos:[video],verificationIncomplete:true});assert.match(a.el('manual-search-status').textContent,/Some candidates could not be verified; results may be incomplete/);choose(a,video.id);const options=a.el('manual-search-options').innerHTML;
+ paused(a,{id,state:'ready',videos:[video],verificationIncomplete:true});assert.equal(a.el('manual-search-options').innerHTML,options);assert.equal(a.el('manual-search-save').disabled,false);assert.match(a.el('manual-search-status').textContent,/Some candidates could not be verified/);
+ await a.el('manual-search-save').listeners.click();assert.equal(JSON.parse(a.getRaw()).customVideos[0].id,video.id);
+});
+test('manual search distinguishes no candidates from unverified without displaying arbitrary reasons',async()=>{
+ for(const [reason,expected] of [['verification-incomplete',/Could not verify candidates; try again/],['no-candidates',/No video candidates found/],['SYNTHETIC_PRIVATE_ERROR',/Search failed/]]){
+  const a=await app();paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;paused(a,{id,state:'error',reason});assert.match(a.el('manual-search-status').textContent,expected);assert.doesNotMatch(a.el('manual-search-status').textContent,/SYNTHETIC_PRIVATE_ERROR/);assert.equal(a.getRaw(),null);
+ }
+});
+
+test('Live incomplete-verification notice follows the coarse status flag',async()=>{
+ const a=await app();a.events.status({mode:'listening',enabled:true,message:'Synthetic',verificationMayBeIncomplete:true});assert.equal(a.el('verification-warning').hidden,false);
+ a.events.status({mode:'listening',enabled:true,message:'Later synthetic status',verificationMayBeIncomplete:true});assert.equal(a.el('verification-warning').hidden,false);
+ a.events.status({mode:'paused',enabled:false,message:'Paused',verificationMayBeIncomplete:false});assert.equal(a.el('verification-warning').hidden,true);
+});
+
+test('invalid partial-verification flags fail closed without exposing results',async()=>{
+ const a=await app();paused(a);open(a);const start=submit(a);a.startResolve({ok:true});await start;paused(a,{id,state:'ready',videos:[video],verificationIncomplete:'false'});assert.match(a.el('manual-search-status').textContent,/invalid results/);assert.equal(a.el('manual-search-options').innerHTML,'');assert.equal(a.getRaw(),null);
+});

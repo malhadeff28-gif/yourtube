@@ -118,7 +118,7 @@ process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{
   assert.equal(calls[1].search,true);
   assert.match(calls[1].input,/edited topic/);
   assert.doesNotMatch(calls[1].input,/original topic/);
-  await waitFor(async()=>{const s=await status();return s.mode==='listening'&&/No verifiable videos/.test(s.message)});
+  await waitFor(async()=>{const s=await status();return s.mode==='listening'&&/No video candidates/.test(s.message)});
   fs.appendFileSync(session,JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'Another synthetic work message for review.'}]}})+'\n');
   const second = await waitFor(async()=>{const s=await status();return s.mode==='awaiting-review'&&s});
   await post('/api/live',{enabled:false});
