@@ -50,7 +50,7 @@ For a no-chat example, select **Try a sample feed** on an empty feed or visit [t
 
 Run the isolated startup and privacy-control checks with `node --test tests/*.test.js`. They use a temporary synthetic session and a fake Codex executable; they do not read your chats or contact a model.
 
-Run `node evaluation/relevance.js` to compare provider order and lexical reranking on a small, hand-labeled synthetic fixture. These examples are a reproducible smoke check, not evidence of real-world recommendation quality.
+Run `node evaluation/relevance.js` to compare provider order and lexical reranking on a small, hand-labeled synthetic fixture. These examples are a reproducible smoke check, not evidence of real-world recommendation quality. To evaluate an explicitly supplied local labeled fixture instead, run `node evaluation/relevance.js --fixture /path/to/labeled.json`; see [fixture format and limits](evaluation/README.md). No data is collected automatically or sent to a provider.
 
 An isolated acceptance harness can exercise the complete flow with fake services or, explicitly, a real Codex search for a synthetic topic. See [live acceptance](docs/live-acceptance.md) for the commands, usage implications, and the separate manual real-chat check.
 
