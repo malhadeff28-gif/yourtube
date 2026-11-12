@@ -136,7 +136,14 @@ function runCodex(prompt,schema,search,controller){return new Promise((resolve,r
  child.on('error',err=>{childError=err;stopChild(child,true)});child.on('close',code=>{if(controller.child===child)controller.child=null;if(settled)return;if(childError){finish(childError);return}if(timedOut){finish(Error('Codex timed out'));return}try{if(code!==0)throw Error('Codex unavailable');finish(null,JSON.parse(fs.readFileSync(out,'utf8')))}catch{finish(Error('Codex did not return a valid response'))}});
  child.stdin.on('error',()=>{});child.stdin.end(prompt)
 });}
-async function metadata(id,controller){if(!/^[A-Za-z0-9_-]{11}$/.test(id))return null;let child;try{const u='https://www.youtube.com/oembed?url='+encodeURIComponent('https://www.youtube.com/watch?v='+id)+'&format=json';const request=execFileAsync('curl',['-fsSL','--max-time','12',u],{maxBuffer:100000});child=request.child;controller.child=child;const {stdout}=await request;const v=JSON.parse(stdout);if(!v.title||!v.author_name)return null;return {title:String(v.title).slice(0,200),channel:String(v.author_name).slice(0,100)}}catch{return null}finally{if(controller.child===child)controller.child=null}}
+function metadataText(value,limit){
+ if(typeof value!=='string')return null;
+ const trimmed=value.trim();if(!trimmed)return null;
+ // Respect the existing UTF-16 limits without cutting a supplementary character in half.
+ let result='';for(const character of trimmed){if(result.length+character.length>limit)break;result+=character}
+ return result||null;
+}
+async function metadata(id,controller){if(!/^[A-Za-z0-9_-]{11}$/.test(id))return null;let child;try{const u='https://www.youtube.com/oembed?url='+encodeURIComponent('https://www.youtube.com/watch?v='+id)+'&format=json';const request=execFileAsync('curl',['-fsSL','--max-time','12',u],{maxBuffer:100000});child=request.child;controller.child=child;const {stdout}=await request;const v=JSON.parse(stdout),title=metadataText(v?.title,200),channel=metadataText(v?.author_name,100);if(!title||!channel)return null;return {title,channel}}catch{return null}finally{if(controller.child===child)controller.child=null}}
 let controller={child:null};
 // Only count unique, valid candidate IDs actually submitted for verification.
 // Null metadata has many possible causes; never claim a specific cause or video quality.
