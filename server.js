@@ -12,7 +12,17 @@ function notify(type,value){const body=`event: ${type}\ndata: ${JSON.stringify(v
 const cleanupWarning='Temporary Codex output could not be confirmed removed. Stop the service and check the system temporary directory before restarting.';let cleanupOtherError=null;
 function setState(mode,message,more={}){if(codexCleanupFailed&&!shuttingDown){if(mode==='error'&&message!==cleanupWarning)cleanupOtherError=message;message=cleanupWarning+(cleanupOtherError?' '+cleanupOtherError:'');mode='error'}state={...state,mode,message,...more,enabled,watcherReady:Boolean(watcher)};notify('status',state)}
 function walk(dir){for(const d of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,d.name);if(d.isDirectory())walk(p);else if(d.isFile()&&p.endsWith('.jsonl')){const stat=fs.statSync(p,{bigint:true});entries.set(p,{offset:Number(stat.size),dev:String(stat.dev),ino:String(stat.ino),pending:'',allowed:null})}}}
-function allowed(fd){try{const buf=Buffer.alloc(262144),size=fs.readSync(fd,buf,0,buf.length,0);const line=buf.subarray(0,size).toString('utf8').split('\n')[0],head=JSON.parse(line),meta=head.payload||{};return head.type==='session_meta'&&meta.originator==='Codex Desktop'&&meta.source==='vscode'&&['user','agent_created_thread',null,undefined].includes(meta.thread_source);}catch{return null}}
+function allowed(fd){
+ const buf=Buffer.alloc(262144),size=fs.readSync(fd,buf,0,buf.length,0);
+ try{
+  const line=buf.subarray(0,size).toString('utf8').split('\n')[0],head=JSON.parse(line);
+  if(!head||typeof head!=='object'||Array.isArray(head)||head.type!=='session_meta'||!head.payload||typeof head.payload!=='object'||Array.isArray(head.payload))return null;
+  const meta=head.payload;
+  if((typeof meta.originator==='string'&&meta.originator!=='Codex Desktop')||(typeof meta.source==='string'&&meta.source!=='vscode'))return false;
+  if(typeof meta.originator!=='string'||typeof meta.source!=='string')return null;
+  return ['user','agent_created_thread',null,undefined].includes(meta.thread_source)
+ }catch{return null}
+}
 function redact(s){return s.replace(/https?:\/\/\S+/gi,'[link]').replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi,'[email]').replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{12,}\b/g,'[key]').replace(/\b(?:password|passcode|token|secret|api[-_ ]?key)\s*[:=]\s*\S+/gi,'[credential]').replace(/(?:\/[\w .-]+){3,}/g,'[path]').slice(0,2500)}
 // Read bounded chunks without depending on another fs.watch notification. Keep only
 // complete UTF-8 JSONL records and skip oversized records through their newline.
@@ -31,23 +41,32 @@ function readNew(file){try{
   }
   if(e.dev!==stat.dev||e.ino!==stat.ino||stat.size<e.offset){
     // Replacements and truncations can contain old records, so baseline them.
-    if(enabled&&mayContainDesktopActivity(fd,stat.size))markActivityMayBeMissed();e.offset=stat.size;e.dev=stat.dev;e.ino=stat.ino;e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=null;clearFileHistory(file);return
+    if(enabled&&mayContainDesktopActivity(fd,stat.size))markActivityMayBeMissed();e.offset=stat.size;e.dev=stat.dev;e.ino=stat.ino;e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=null;e.authorizationUncertain=false;clearFileHistory(file);return
   }
-  if(stat.size===e.offset)return;
   if(!enabled){e.offset=stat.size;e.pending=Buffer.alloc(0);e.discarding=false;return}
   // Revalidate the header on the same opened file before processing content.
+  // Do so even for an equal-sized notification: a header may have changed in place.
   const permitted=allowed(fd);
-  if(permitted===null)return;
-  if(!permitted){e.offset=stat.size;e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=false;clearFileHistory(file);return}
+  if(permitted!==true){if(permitted===null&&stat.size>e.offset)markActivityMayBeMissed();e.offset=stat.size;e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=permitted;e.authorizationUncertain=true;clearFileHistory(file);return}
+  // A previously unverifiable header cannot establish the age of intervening bytes.
+  // First successful validation is a fresh baseline, never a replay of those bytes.
+  if(e.authorizationUncertain){if(stat.size>e.offset)markActivityMayBeMissed();e.offset=stat.size;e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=true;e.authorizationUncertain=false;return}
+  if(stat.size===e.offset){
+    // Even with no appended bytes, a queued message must not outlive a
+    // pathname swap or rewrite observed during header validation.
+    const after=fs.fstatSync(fd,{bigint:true}),current=fs.statSync(file,{bigint:true});
+    if(before.dev!==after.dev||before.ino!==after.ino||before.size!==after.size||before.mtimeNs!==after.mtimeNs||before.ctimeNs!==after.ctimeNs||current.dev!==after.dev||current.ino!==after.ino||current.size!==after.size||current.mtimeNs!==after.mtimeNs||current.ctimeNs!==after.ctimeNs){markActivityMayBeMissed();clearFileHistory(file);entries.delete(file)}
+    return
+  }
   const len=Math.min(stat.size-e.offset,READ_CHUNK_BYTES),buf=Buffer.alloc(len);
   const got=fs.readSync(fd,buf,0,len,e.offset);
   // Recheck the header and file version before consuming any captured text.
   const stillPermitted=allowed(fd),after=fs.fstatSync(fd,{bigint:true});
-  let current;try{current=fs.statSync(file,{bigint:true})}catch(err){if(err.code==='ENOENT'){clearFileHistory(file);entries.delete(file);return}current=null}
+  let current;try{current=fs.statSync(file,{bigint:true})}catch(err){if(err.code==='ENOENT'){clearFileHistory(file);entries.delete(file);return}throw err}
   if(stillPermitted!==true||!current||before.dev!==after.dev||before.ino!==after.ino||before.size!==after.size||before.mtimeNs!==after.mtimeNs||before.ctimeNs!==after.ctimeNs||current.dev!==after.dev||current.ino!==after.ino||current.size!==after.size||current.mtimeNs!==after.mtimeNs||current.ctimeNs!==after.ctimeNs){
     // A concurrent write, rewrite, or pathname swap makes the captured bytes uncertain.
     // Skip them; a later event can establish a fresh safe baseline.
-    markActivityMayBeMissed();const latest=current||after;e.offset=Number(latest.size);e.dev=String(latest.dev);e.ino=String(latest.ino);e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=null;clearFileHistory(file);return
+    markActivityMayBeMissed();const latest=current||after;e.offset=Number(latest.size);e.dev=String(latest.dev);e.ino=String(latest.ino);e.pending=Buffer.alloc(0);e.discarding=false;e.allowed=null;e.authorizationUncertain=stillPermitted!==true;clearFileHistory(file);return
   }
   e.allowed=true;e.offset+=got;
   if(!Buffer.isBuffer(e.pending))e.pending=Buffer.alloc(0);
@@ -65,7 +84,7 @@ function readNew(file){try{
   }
   if(got>0&&e.offset<stat.size&&!e.scheduled){e.scheduled=true;setImmediate(()=>{e.scheduled=false;readNew(file)})}
   }finally{fs.closeSync(fd)}
-}catch(err){if(err.code==='ENOENT'){clearFileHistory(file);entries.delete(file)}else setState('error','Could not read a local chat event.')}}
+}catch(err){clearFileHistory(file);entries.delete(file);if(err.code!=='ENOENT'){markActivityMayBeMissed();setState('error','Could not read a local chat event.')}}}
 function consumeLine(file,line){
   let record;try{record=JSON.parse(line)}catch{return}
   if(!record||typeof record!=='object'||Array.isArray(record))return;
