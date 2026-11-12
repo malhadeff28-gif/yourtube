@@ -14,7 +14,7 @@ async function setup(initial){
  class FakeURL extends URL{static createObjectURL(blob){const id='blob:synthetic-'+objects.size;objects.set(id,blob);return id}static revokeObjectURL(){}}
  class Events{addEventListener(){}close(){}}
  const storage={getItem(k){reads.push(k);if(k==='yourtube.state.v1'){if(fail)throw Error('synthetic');return raw}return null},setItem(...args){writes.push(args)}};
- const feed={contexts:[{id:'a',name:'Example',task:'Synthetic'}],videos:[],focusContext:'a',contextSource:'Synthetic'};
+ const feed={contexts:[{id:'a',name:'New Live project',task:'Synthetic'}],videos:[{id:'abc123def45',context:'a',title:'New live public video',channel:'Synthetic',reason:'Synthetic',source:'Synthetic'}],focusContext:'a',contextSource:'Synthetic'};
  const ctx={window:{},document,localStorage:storage,navigator:{locks:{request:async(_k,_o,fn)=>fn({})}},EventSource:Events,fetch:async url=>{requests.push(url);return {ok:true,json:async()=>feed}},setTimeout,clearTimeout,AbortController,URL:FakeURL,Blob,console};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../dist/app.js'),'utf8'),ctx);await tick();
  return {el,downloads,objects,requests,writes,reads,change:v=>raw=v,fail:()=>fail=true};
@@ -49,7 +49,9 @@ test('export disclosure precedes reveal and identifies private unencrypted scope
 
 test('a valid unresolved deletion remains hidden and untouched while its state is exported',async()=>{
  const raw=JSON.stringify({contextEdits:{a:{name:'Old private name'}},videoNotes:[{id:'abc123def45',context:'a',text:'Old private note'}],__yourtubePendingDeletion:{id:'a',token:'test-token'}});
- const a=await setup(raw);assert.match(a.el('storage-warning').textContent,/unresolved/i);assert.doesNotMatch(a.el('grid').innerHTML,/Old private/);
+ const a=await setup(raw);assert.match(a.el('storage-warning').textContent,/unresolved/i);
+ for(const id of ['grid','filters','context-nav'])assert.doesNotMatch(a.el(id).innerHTML,/Old private name|Old private note|New Live project|New live public video/);
+ a.el('search').value='Old private note';a.el('search').listeners.input();assert.doesNotMatch(a.el('grid').innerHTML,/Old private note|New live public video/);
  a.el('browser-state-export-open').listeners.click();assert.equal(a.el('browser-state-export-preview').value,'');a.el('browser-state-export-reveal').listeners.click();
  const snapshot=a.el('browser-state-export-preview').value;assert.equal(JSON.parse(snapshot).raw,raw);a.el('browser-state-export-download').listeners.click();assert.equal(await a.objects.get(a.downloads[0].href).text(),snapshot);assert.deepEqual(a.writes,[]);assert.deepEqual(a.requests,['feed.json']);assert.match(a.el('storage-warning').textContent,/unresolved/i);
 });
