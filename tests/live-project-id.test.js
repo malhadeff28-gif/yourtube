@@ -77,6 +77,7 @@ for (const exhaustion of [false, true]) test(`Live new-project allocation ${exha
   if (exhaustion) {
     const status = await waitFor(async () => { const s = await readStatus(base); return s.mode === 'error' && s; }, 'collision did not fail');
     assert.match(status.message, /unique project ID/);
+    assert.equal(status.activityMayBeMissed, true);
     assert.equal(fs.readFileSync(feed, 'utf8'), before);
   } else {
     await waitFor(() => JSON.parse(fs.readFileSync(feed, 'utf8')).videos.length === 1, 'new project not created');
